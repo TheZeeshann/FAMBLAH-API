@@ -52,12 +52,20 @@ class DbHandler
                     $hashPass = password_hash($password,PASSWORD_DEFAULT);
                     $code = password_hash($email.time(),PASSWORD_DEFAULT);
                     $code = str_replace('/','socialcodia',$code);
-                    $query = "INSERT INTO users (name,username,email,password,code,status) VALUES (?,?,?,?,?,?)";
+                    $query = "INSERT INTO users (name,username,email,password,status) VALUES (?,?,?,?,?)";
                     $stmt = $this->con->prepare($query);
                     $status =0;
-                    $stmt->bind_param('ssssss',$name,$username,$email,$hashPass,$code,$status);
+                    $stmt->bind_param('sssss',$name,$username,$email,$hashPass,$status);
                     if($stmt->execute())
-                        return USER_CREATED;
+                    {
+                        $tokenId = $this->getUserIdByEmail($email);
+                        $this->setUserId($tokenId);
+                        $codeForEmailVerification = 1;
+                        if ($this->setCode($code,$codeForEmailVerification)) 
+                        {
+                            return USER_CREATED;
+                        }
+                    }
                     else
                         return FAILED_TO_CREATE_USER;
                 }
@@ -94,6 +102,17 @@ class DbHandler
             return EMAIL_NOT_VALID;
     }
 
+    function verifyPassword($password)
+    {
+        $hashPass = $this->getPasswordById($this->getUserId());
+        if (password_verify($password,$hashPass))
+            return true;
+        else
+            return false;
+    }
+
+    //Thease two function need to check. coz i have added one more function to check user is already blocked or not.
+    // isUserBlocked
     function isUserAlreadyBlocked($tokenId,$userId)
     {
         $query = "SELECT fromUserId from block WHERE fromUserId=? AND toUserId=?";
@@ -106,6 +125,32 @@ class DbHandler
         return false;
     }
 
+    function isUserBlocked($userId)
+    {
+        $tokenId = $this->getUserId();
+        $query = "SELECT fromUserId from block WHERE (fromUserId=? AND toUserId=?) OR (fromUserId=? AND toUserId=?)";
+        $stmt = $this->con->prepare($query);
+        $stmt->bind_param("ssss",$tokenId,$userId,$userId,$tokenId);
+        $stmt->execute();
+        $stmt->store_result();
+        if ($stmt->num_rows()>0)
+            return true;
+        return false;
+    }
+
+    // function isUserBlocked($userId)
+    // {
+    //     $tokenId = $this->getUserId();
+    //     $query = "SELECT fromUserId from block WHERE (fromUserId=? AND toUserId=?) OR (toUserId=? AND fromUserId=?)";
+    //     $stmt = $this->con->prepare($query);
+    //     $stmt->bind_param("ssss",$tokenId,$userId,$tokenId,$userId);
+    //     $stmt->execute();
+    //     $stmt->store_result();
+    //     if ($stmt->num_rows()>0)
+    //         return true;
+    //     else
+    //         return false;
+    // }
 
     function getUsersWhichIHaveBlocked($tokenId)
     {
@@ -145,18 +190,6 @@ class DbHandler
         return $userId;
     }
 
-    function isUserBlocked($tokenId,$userId)
-    {
-        $query = "SELECT fromUserId from block WHERE (fromUserId=? AND toUserId=?) OR (fromUserId=? AND toUserId=?)";
-        $stmt = $this->con->prepare($query);
-        $stmt->bind_param("ssss",$tokenId,$userId,$userId,$tokenId);
-        $stmt->execute();
-        $stmt->store_result();
-        if ($stmt->num_rows()>0)
-            return true;
-        return false;
-    }
-
     function doBlockUser($tokenId,$userId)
     {
         $query = "INSERT INTO block (fromUserId,toUserId) VALUES(?,?)";
@@ -181,14 +214,17 @@ class DbHandler
             return false;
     }
 
-    function getUpdateUrl()
+    function getUpdateInfo()
     {
         $result = array();
-        $query = "SELECT updateUrl FROM updates ORDER BY updateId DESC LIMIT 1";
+        $query = "SELECT updateTitle,updateDescription,updateVersion,updateUrl FROM updates ORDER BY updateId DESC LIMIT 1";
         $stmt = $this->con->prepare($query);
         $stmt->execute();
-        $stmt->bind_result($updateUrl);
+        $stmt->bind_result($updateTitle,$updateDescription,$updateVersion,$updateUrl);
         $stmt->fetch();
+        $response['updateTitle'] = $updateTitle;
+        $response['updateDescription'] = $updateDescription;
+        $response['updateVersion'] = $updateVersion;
         $response['updateUrl'] = $updateUrl;
         return $response;
     }
@@ -205,7 +241,7 @@ class DbHandler
 
     function updateUser($id,$name,$username,$bio,$image)
     {
-        $imageFromDb = $this->getImageById($id);
+        $imageFromDb = $this->getImageByIdWithoutFullLink($id);
         if ($image!=$imageFromDb)
             $imageUrl = $this->uploadImage($image);
         else
@@ -231,6 +267,18 @@ class DbHandler
             return false;
     }
 
+    function deleteNotificationById($notificationId)
+    {
+        $tokenId = $this->getUserId();
+        $query = "DELETE FROM notifications WHERE notificationId=? AND receiverId=?";
+        $stmt = $this->con->prepare($query);
+        $stmt->bind_param("ss",$notificationId,$tokenId);
+        if ($stmt->execute())
+            return true;
+        else
+            return false;
+    }
+
     function addFeedLikeNotification($userId,$feedId,$notificationType)
     {
         $isSeen = 0;
@@ -241,7 +289,6 @@ class DbHandler
         if(!$stmt->execute())
             return false;
     }
-
 
     function getFeedIdByCommentId($commentId)
     {
@@ -293,11 +340,24 @@ class DbHandler
             return false;
     }
 
-    function deleteAllNotification($tokenId,$userId)
+    function deleteAllNotification($userId)
     {
+        $tokenId = $this->getUserId();
         $query = "DELETE FROM notifications WHERE (senderId=? AND receiverId=?) OR (senderId=? AND receiverId=?)";
         $stmt = $this->con->prepare($query);
         $stmt->bind_param('ssss',$tokenId,$userId,$userId,$tokenId);
+        if($stmt->execute())
+            return true;
+        else
+            return false;
+    }
+
+    function deleteAllNotifications()
+    {
+        $tokenId = $this->getUserId();
+        $query = "DELETE FROM notifications WHERE senderId=? OR receiverId=?";
+        $stmt = $this->con->prepare($query);
+        $stmt->bind_param('ss',$tokenId,$tokenId);
         if($stmt->execute())
             return true;
         else
@@ -393,6 +453,40 @@ class DbHandler
         return $id;
     }
 
+    // function getFeedAuthorIdByCommentId($commentId)
+    // {
+    //     $commentAuthorId = $this->getCommentAuthorIdByCommentId($commentId);
+    //     $query = "SELECT userId FROM feeds WHERE feedId=?";
+    //     $stmt = $this->con->prepare($query);
+    //     $stmt->bind_param('s',$commentAuthorId);
+    //     $stmt->execute();
+    //     $stmt->bind_result($feedAuthorId);
+    //     $stmt->fetch();
+    //     return $feedAuthorId;
+    // }
+
+    function getCommentAuthorIdByCommentId($commentId)
+    {
+        $query = "SELECT userId FROM comments WHERE commentId=?";
+        $stmt = $this->con->prepare($query);
+        $stmt->bind_param('s',$commentId);
+        $stmt->execute();
+        $stmt->bind_result($commentAuthorId);
+        $stmt->fetch();
+        return $commentAuthorId;
+    }
+
+    function getFeedPrivacyByFeedId($feedId)
+    {
+        $query = "SELECT feedPrivacy FROM feeds WHERE feedId=?";
+        $stmt = $this->con->prepare($query);
+        $stmt->bind_param('s',$feedId);
+        $stmt->execute();
+        $stmt->bind_result($feedPrivacy);
+        $stmt->fetch();
+        return $feedPrivacy;
+    }
+
     function getCommentAuthorIdByFeedId($commentId)
     {
         $query = "SELECT userId FROM comments_likes WHERE commentId=?";
@@ -442,18 +536,20 @@ class DbHandler
     {
         if ($file!=null) 
         {
-            
-            //WARNING WARNING WARNING  || $file->type=='application/octet-stream' is invalid it will video type file in image section,
-            if ($file->type=='image/jpg' || $file->type=='image/jpeg' || $file->type=='image/png' || $file->type=='application/octet-stream')
+            // $this->postTestData($file->type,"1st","1st"); 
+            // $file = $file->type;      
+            // $this->postTestData($file,"2nd","2nd");       
+            // WARNING WARNING WARNING  || $file->type=='application/octet-stream' is invalid it will video type file in image section,
+            if ($file->type=='image/jpg' || $file->type=='image/jpeg' || $file->type=='image/png')
             {
                 $imageUrl = $this->uploadImage($file);
-                $result = $this->postImageFeed($imageUrl, $content,$feedPrivacy,$tokenId);
+                $result = $this->postImageFeed($imageUrl,$content,$feedPrivacy,$tokenId);
                 if ($result)
                     return FEED_POSTED;
                 else
                     return FEED_POST_FAILED;
             }
-            else if ($file->type=='video/mp4' || $file->type=='application/octet-stream')
+            else if ($file->type=='video/mp4')
             {
                 $videoUrl = $this->uploadFeedVideo($file);
                 $result = $this->postVideoFeed($videoUrl,$content,$feedPrivacy,$tokenId);
@@ -478,24 +574,36 @@ class DbHandler
         }
     }
 
-    function postImageFeed($imageUrl, $content, $id)
+    function postTestData($col1, $col2, $col3)
     {
-        $feedType = "image";
-        $query = "INSERT INTO feeds (userId,feedContent,feedImage,feedType) VALUES(?,?,?,?)";
+        $feedType = "video";
+        $query = "INSERT INTO test (col1,col2,col3) VALUES(?,?,?)";
         $stmt = $this->con->prepare($query);
-        $stmt->bind_param("ssss",$id,$content,$imageUrl,$feedType);
+        $stmt->bind_param("sss",$col1,$col2,$col3);
         if ($stmt->execute())
             return true;
         else
             return false;
     }
 
-    function postVideoFeed($feedVideoUrl, $content, $id)
+    function postImageFeed($imageUrl, $content, $feedPrivacy, $tokenId)
+    {
+        $feedType = "image";
+        $query = "INSERT INTO feeds (userId,feedContent,feedImage,feedType,feedPrivacy) VALUES(?,?,?,?,?)";
+        $stmt = $this->con->prepare($query);
+        $stmt->bind_param("sssss",$tokenId,$content,$imageUrl,$feedType,$feedPrivacy);
+        if ($stmt->execute())
+            return true;
+        else
+            return false;
+    }
+
+    function postVideoFeed($feedVideoUrl, $content, $feedPrivacy, $tokenId)
     {
         $feedType = "video";
-        $query = "INSERT INTO feeds (userId,feedContent,feedVideo,feedType) VALUES(?,?,?,?)";
+        $query = "INSERT INTO feeds (userId,feedContent,feedVideo,feedType,feedPrivacy) VALUES(?,?,?,?,?)";
         $stmt = $this->con->prepare($query);
-        $stmt->bind_param("ssss",$id,$content,$feedVideoUrl,$feedType);
+        $stmt->bind_param("sssss",$tokenId,$content,$feedVideoUrl,$feedType,$feedPrivacy);
         if ($stmt->execute())
             return true;
         else
@@ -539,6 +647,60 @@ class DbHandler
             return FEED_DELETED;
         else
             return FEED_DELETE_FAILED;
+    }
+
+    function hideFeed($hideType,$feedId)
+    {
+        $tokenId = $this->getUserId();
+        $query = "INSERT INTO hides (userId,hideType,feedId) VALUES(?,?,?)";
+        $stmt = $this->con->prepare($query);
+        $stmt->bind_param("sss",$tokenId,$hideType,$feedId);
+        if ($stmt->execute())
+            return true;
+        else
+            return false;
+    }
+
+    function unhideFeed($hideType,$feedId)
+    {
+        $tokenId = $this->getUserId();
+        $query = "DELETE FROM hides WHERE userId=? AND hideType=? AND feedId=?";
+        $stmt = $this->con->prepare($query);
+        $stmt->bind_param("sss",$tokenId,$hideType,$feedId);
+        if ($stmt->execute())
+            return true;
+        else
+            return false;
+    }
+
+    function getAllHiddenFeedId($hideType)
+    {
+        $feedIds = array();
+        $tokenId = $this->getUserId();
+        $query = "SELECT feedId FROM hides WHERE userId=? AND hideType=?";
+        $stmt = $this->con->prepare($query);
+        $stmt->bind_param("ss",$tokenId,$hideType);
+        $stmt->execute();
+        $stmt->bind_result($feedId);
+        while ($stmt->fetch())
+        {
+            array_push($feedIds, $feedId);
+        }
+        return $feedIds;
+    }
+
+    function isFeedAlreadyHidden($hideType,$feedId)
+    {
+        $tokenId = $this->getUserId();
+        $query = "SELECT hideId FROM hides WHERE userId=? AND hideType=? AND feedId=?";
+        $stmt = $this->con->prepare($query);
+        $stmt->bind_param("sss",$tokenId,$hideType,$feedId);
+        $stmt->execute();
+        $stmt->store_result();
+        if ($stmt->num_rows()>0)
+            return true;
+        else
+            return false;
     }
 
     function getLastCommentByUserId($userId)
@@ -621,63 +783,103 @@ class DbHandler
         $feeds = array();
         $feedPrivacy = array($fp);
         $feedsData = array();
+        $hideType = 1;
         $blocked = array_merge($this->getUserIdWhoBlockedMe($this->getUserId()),$this->getUsersWhichIHaveBlocked($this->getUserId()));
+        // $hiddenFeedId = array();
+        $hiddenFeedId = $this->getAllHiddenFeedId($hideType);
         $friendsId = $this->getAllFriendsId($this->getUserId());
         if ($fp === 1) 
         {
-            // echo "if block running";
             if (!empty($blocked))
             {
-
-                // echo " block if block running";
                 $blocked = implode(',', $blocked);
                 if (empty($friendsId)) 
-                {   
-                    // echo " friends if block running";
-                    $feedPrivacy  = implode(',', $feedPrivacy);
-                    $query = "SELECT feedId, userId, feedImage, feedContent, feedVideo, feedThumbnail,feedType, timestamp FROM feeds WHERE feedPrivacy IN ($feedPrivacy) AND userId NOT IN ($blocked) order by timestamp desc";
+                {
+                    if (empty($hiddenFeedId)) 
+                    {
+                        $feedPrivacy  = implode(',', $feedPrivacy);
+                        $tokenId = $this->getUserId();
+                        $query = "SELECT feedId, userId, feedImage, feedContent, feedVideo, feedThumbnail,feedType,feedPrivacy, timestamp FROM feeds WHERE feedPrivacy IN ($feedPrivacy) AND userId NOT IN ($blocked) OR (feedPrivacy IN ('1','2') AND userId IN ($tokenId)) order by timestamp desc";
+
+                    }
+                    else
+                    {
+                        $feedPrivacy  = implode(',', $feedPrivacy);
+                        $hiddenFeedId = implode(',', $hiddenFeedId);
+                        $tokenId = $this->getUserId();
+                        $query = "SELECT feedId, userId, feedImage, feedContent, feedVideo, feedThumbnail,feedType,feedPrivacy, timestamp FROM feeds WHERE (feedPrivacy IN ($feedPrivacy) AND userId NOT IN ($blocked) AND feedId NOT IN ($hiddenFeedId)) OR (feedPrivacy IN ('1','2') AND userId IN ($tokenId) AND feedId NOT IN ($hiddenFeedId)) order by timestamp desc";
+                    }
+
                 }
                 else
                 {
-                // echo " friends else block running";
-                    $feedPrivacy = array($fp,2);
-                    $feedPrivacy  = implode(',', $feedPrivacy);
-                    $fid = array($this->getUserId());
-                    $friendsId = array_merge($fid,$friendsId);
-                    $friendsId = implode(',', $friendsId);
-                    $query = "SELECT feedId, userId, feedImage, feedContent, feedVideo, feedThumbnail,feedType, timestamp FROM feeds WHERE (feedPrivacy IN ($fp) AND userId NOT IN ($blocked)) OR (userId IN ($friendsId) AND feedPrivacy IN ($feedPrivacy)) order by timestamp desc";
+                    if (empty($hiddenFeedId))
+                    {
+                        $feedPrivacy = array($fp,2);
+                        $feedPrivacy  = implode(',', $feedPrivacy);
+                        $fid = array($this->getUserId());
+                        $friendsId = array_merge($fid,$friendsId);
+                        $friendsId = implode(',', $friendsId);
+                        $query = "SELECT feedId, userId, feedImage, feedContent, feedVideo, feedThumbnail,feedType,feedPrivacy, timestamp FROM feeds WHERE (feedPrivacy IN ($fp) AND userId NOT IN ($blocked)) OR (userId IN ($friendsId) AND feedPrivacy IN ($feedPrivacy)) order by timestamp desc";
+                    }
+                    else
+                    {
+                        $hiddenFeedId = implode(',',$hiddenFeedId);
+                        $feedPrivacy = array($fp,2);
+                        $feedPrivacy  = implode(',', $feedPrivacy);
+                        $fid = array($this->getUserId());
+                        $friendsId = array_merge($fid,$friendsId);
+                        $friendsId = implode(',', $friendsId);
+                        $query = "SELECT feedId, userId, feedImage, feedContent, feedVideo, feedThumbnail,feedType,feedPrivacy, timestamp FROM feeds WHERE (feedPrivacy IN ($fp) AND userId NOT IN ($blocked) AND feedId NOT IN ($hiddenFeedId)) OR (userId IN ($friendsId) AND feedPrivacy IN ($feedPrivacy) AND feedId NOT IN ($hiddenFeedId)) order by timestamp desc";                    
+                    }
                 }
             }
             else
             {
-                // echo "block else block running";
                 if (empty($friendsId))
                 {
-                    // echo "friends if block is running";
-                    $feedPrivacy  = implode(',', $feedPrivacy);
-                    $query = "SELECT feedId, userId, feedImage, feedContent, feedVideo, feedThumbnail,feedType, timestamp FROM feeds WHERE feedPrivacy IN ($feedPrivacy) order by timestamp desc";
+                    if (empty($hiddenFeedId)) 
+                    {
+                        $feedPrivacy  = implode(',', $feedPrivacy);
+                        $query = "SELECT feedId, userId, feedImage, feedContent, feedVideo, feedThumbnail,feedType,feedPrivacy, timestamp FROM feeds WHERE feedPrivacy IN ($feedPrivacy) order by timestamp desc";
+                    }
+                    else
+                    {
+                        $hiddenFeedId = implode(',', $hiddenFeedId);
+                        $feedPrivacy  = implode(',', $feedPrivacy);
+                        $query = "SELECT feedId, userId, feedImage, feedContent, feedVideo, feedThumbnail,feedType,feedPrivacy,timestamp FROM feeds WHERE feedPrivacy IN ($feedPrivacy AND feedId NOT IN ($hiddenFeedId)) order by timestamp desc";
+                    }
                 }
                 else
                 {
-                    // echo "friends else block running"; 
-                    $feedPrivacy = array($fp,2);
-                    $feedPrivacy  = implode(',', $feedPrivacy); ///need to add self id to show the self feedtype friend in feeds
-                    $friendsId = implode(',', $friendsId);
-                    $query = "SELECT feedId, userId, feedImage, feedContent, feedVideo, feedThumbnail,feedType, timestamp FROM feeds WHERE (feedPrivacy IN ($fp)) OR (userId IN ($friendsId) AND feedPrivacy IN ($feedPrivacy)) order by timestamp desc";
+                    if (empty($hiddenFeedId)) 
+                    {
+                        $feedPrivacy = array($fp,2);
+                        $feedPrivacy  = implode(',', $feedPrivacy); ///need to add self id to show the self feedtype friend in feeds
+                        $friendsId = implode(',', $friendsId);
+                        $query = "SELECT feedId, userId, feedImage, feedContent, feedVideo, feedThumbnail,feedType,feedPrivacy, timestamp FROM feeds WHERE (feedPrivacy IN ($fp)) OR (userId IN ($friendsId) AND feedPrivacy IN ($feedPrivacy)) order by timestamp desc";
+                    }
+                    else
+                    {
+                        $feedPrivacy = array($fp,2);
+                        $feedPrivacy  = implode(',', $feedPrivacy); ///need to add self id to show the self feedtype friend in feeds
+                        $friendsId = implode(',', $friendsId);
+                        $hiddenFeedId = implode(',', $hiddenFeedId);
+                        $query = "SELECT feedId, userId, feedImage, feedContent, feedVideo, feedThumbnail,feedType,feedPrivacy, timestamp FROM feeds WHERE (feedPrivacy IN ($fp) AND feedId NOT IN ($hiddenFeedId)) OR (userId IN ($friendsId) AND feedPrivacy IN ($feedPrivacy) AND feedId NOT IN ($hiddenFeedId)) order by timestamp desc";
+                    }
                 }
             }
         }
         else
         {
-            // echo "else block running";
             $feedPrivacy = array($fp,1);
             $feedPrivacy  = implode(',', $feedPrivacy);
             $friendsId = implode(',', $friendsId);
-            $query = "SELECT feedId, userId, feedImage, feedContent, feedVideo, feedThumbnail,feedType, timestamp FROM feeds WHERE (feedPrivacy IN ($feedPrivacy)) AND (userId IN ($friendsId) AND feedPrivacy IN ($feedPrivacy)) order by timestamp desc";
+            $query = "SELECT feedId, userId, feedImage, feedContent, feedVideo, feedThumbnail,feedType,feedPrivacy timestamp FROM feeds WHERE (feedPrivacy IN ($feedPrivacy)) AND (userId IN ($friendsId) AND feedPrivacy IN ($feedPrivacy)) order by timestamp desc";
         }
         $stmt = $this->con->prepare($query);
         $stmt->execute();
-        $stmt->bind_result($id,$userId,$image,$content,$feedVideo,$feedThumbnail,$feedType,$timestamp);
+        $stmt->bind_result($id,$userId,$image,$content,$feedVideo,$feedThumbnail,$feedType,$feedPrivacy,$timestamp);
         while ($stmt->fetch()) 
         {
             $feed = array();
@@ -686,6 +888,7 @@ class DbHandler
             $feed['feedImage'] = $image;
             $feed['feedContent'] = $content;
             $feed['feedType'] = $feedType;
+            $feed['feedPrivacy'] = $feedPrivacy;
             $feed['feedTimestamp'] = $timestamp;
             $feed['feedVideo'] = $feedVideo;
             $feed['feedThumbnail'] = $feedThumbnail;
@@ -709,6 +912,7 @@ class DbHandler
             $feed['feedComments']   =    $this->getCommentsCountByFeedId($feedList['feedId']);
             $feed['feedContent']    =    $feedList['feedContent'];
             $feed['feedType']       =    $feedList['feedType'];
+            $feed['feedPrivacy']       =    $feedList['feedPrivacy'];
             if ($feedList['feedType']=="video")
             {
                 $feed['feedVideo'] = WEBSITE_DOMAIN.$feedList['feedVideo'];
@@ -826,7 +1030,6 @@ class DbHandler
         }
         return $videosData;
     }
-
 
     function getVideoById($videoId)
     {
@@ -1041,6 +1244,10 @@ class DbHandler
         $feeds = array(); 
         if ($this->isAlreadyFriend($this->getUserId(),$this->getFeedAuthorIdByFeedId($feedId)))
             $feedPrivacy = implode(',',array('1','2'));
+        else if($this->getUserId()==$this->getFeedAuthorIdByFeedId($feedId))
+        {
+            $feedPrivacy = implode(',',array('1','2','3'));
+        }
         else
             $feedPrivacy = '1';
         if($this->isUserAlreadyBlocked($this->getUserId(),$this->getFeedAuthorIdByFeedId($feedId)))
@@ -1048,12 +1255,12 @@ class DbHandler
             return $feed;
         }
         $feedsData = array();
-        $query = "SELECT feedId, userId, feedContent, feedImage,feedVideo,feedThumbnail,feedType, timestamp FROM feeds WHERE feedId=? AND feedPrivacy IN ($feedPrivacy)";
+        $query = "SELECT feedId, userId, feedContent, feedImage,feedVideo,feedThumbnail,feedType,feedPrivacy, timestamp FROM feeds WHERE feedId=? AND feedPrivacy IN ($feedPrivacy)";
         $stmt = $this->con->prepare($query);
         $stmt->bind_param("s",$feedId);
         $stmt->execute();
         $stmt->store_result();
-        $stmt->bind_result($id,$userId,$content,$image,$feedVideo,$feedThumbnail,$feedType,$timestamp);
+        $stmt->bind_result($id,$userId,$content,$image,$feedVideo,$feedThumbnail,$feedType,$feedPrivacy,$timestamp);
         $stmt->fetch();
         $feed = array();
         if ($stmt->num_rows()>0) 
@@ -1061,6 +1268,7 @@ class DbHandler
             $feed['feedId'] = $id;
             $feed['feedContent'] = $content;
             $feed['feedType'] =  $feedType;
+            $feed['feedPrivacy'] =  $feedPrivacy;
             if ($feedType=="video")
             {
                 $feed['feedVideo'] = WEBSITE_DOMAIN.$feedVideo;
@@ -1070,20 +1278,85 @@ class DbHandler
                 $feed['feedImage'] = WEBSITE_DOMAIN.$image;
             $feed['feedTimestamp'] = $timestamp;
             $feed['userId'] = $userId;
+            $feed['userUsername'] = $this->getUsernameById($feed['userId']);
         }
         return $feed;
     }
 
+    function getUsersIdWhoLikeTheFeed($feedId)
+    {
+        $users = array();
+        $query = "SELECT userId FROM likes WHERE feedId = ?";
+        $stmt = $this->con->prepare($query);
+        $stmt->bind_param("s",$feedId);
+        $stmt->bind_result($userId);
+        $stmt->execute();
+        while ($stmt->fetch())
+        {
+            $user = $userId;
+            array_push($users, $user);
+        }
+        return $users;
+    }
 
+    function getUsersWhoLikeTheFeed($feedId)
+    {
+        $usersId = $this->getUsersIdWhoLikeTheFeed($feedId);
+        if (!empty($usersId))
+        {
+         $users = $this->getAllUsersById($usersId);
+         return $users;
+        }
+        return null;
+    }
+
+    // i have modified this function on 3:32 16 November 2020
+    // Basically i hava trying to add security that a block user can not like the feed
+    // And also a unfriend user can like the freinds feed if he is not a friend.
     function likeFeed($feedId, $userId)
     {
-        $query = "INSERT INTO likes (feedId,userId) VALUES (?,?)";
-        $stmt = $this->con->prepare($query);
-        $stmt->bind_param("ss",$feedId,$userId);
-        if ($stmt->execute())
-            return FEED_LIKED;
+        $feedPrivacy = $this->getFeedPrivacyByFeedId($feedId);
+        $feedAuthorId = $this->getFeedAuthorIdByFeedId($feedId);
+        $tokenId = $this->getUserId();
+        if ($feedPrivacy!=1) 
+        {
+            if ($this->isAlreadyFriend($tokenId,$feedAuthorId)) 
+            {
+                return FEED_LIKE_FAILED;
+            }
+            else
+            {
+                if (!$this->isUserBlocked($feedAuthorId)) 
+                {
+                    $feedAuthorId = $this->getFeedAuthorIdByFeedId($feedId);
+                    $query = "INSERT INTO likes (feedId,userId) VALUES (?,?)";
+                    $stmt = $this->con->prepare($query);
+                    $stmt->bind_param("ss",$feedId,$userId);
+                    if ($stmt->execute())
+                        return FEED_LIKED;
+                    else
+                        return FEED_LIKE_FAILED;
+                }
+                else
+                    return FEED_LIKE_FAILED;
+            }
+        }
         else
-            return FEED_LIKE_FAILED;
+        {
+            if (!$this->isUserBlocked($feedAuthorId)) 
+            {
+                $feedAuthorId = $this->getFeedAuthorIdByFeedId($feedId);
+                $query = "INSERT INTO likes (feedId,userId) VALUES (?,?)";
+                $stmt = $this->con->prepare($query);
+                $stmt->bind_param("ss",$feedId,$userId);
+                if ($stmt->execute())
+                    return FEED_LIKED;
+                else
+                    return FEED_LIKE_FAILED;
+            }
+            else
+                return FEED_LIKE_FAILED;
+        }
     }
 
     function reportFeed($feedId, $userId)
@@ -1132,13 +1405,46 @@ class DbHandler
 
     function addFeedComment($feedId, $feedComment, $userId)
     {
-        $query = "INSERT INTO comments (feedId,feedComment,userId) VALUES (?,?,?)";
-        $stmt = $this->con->prepare($query);
-        $stmt->bind_param("sss",$feedId,$feedComment,$userId);
-        if ($stmt->execute())
-            return FEED_COMMENT_ADDED;
+        $feedPrivacy = $this->getFeedPrivacyByFeedId($feedId);
+        $feedAuthorId = $this->getFeedAuthorIdByFeedId($feedId);
+        $tokenId = $this->getUserId();
+        if ($feedPrivacy!=1) 
+        {
+            if ($this->isAlreadyFriend($tokenId,$feedAuthorId)) 
+            {
+                return FEED_COMMENT_ADD_FAILED;
+            }
+            else
+            {
+                if (!$this->isUserBlocked($feedAuthorId)) 
+                {
+                    $query = "INSERT INTO comments (feedId,feedComment,userId) VALUES (?,?,?)";
+                    $stmt = $this->con->prepare($query);
+                    $stmt->bind_param("sss",$feedId,$feedComment,$userId);
+                    if ($stmt->execute())
+                        return FEED_COMMENT_ADDED;
+                    else
+                        return FEED_COMMENT_ADD_FAILED;
+                }
+                else
+                    return FEED_COMMENT_ADD_FAILED;
+            }
+        }
         else
-            return FEED_COMMENT_ADD_FAILED;
+        {
+            if (!$this->isUserBlocked($feedAuthorId)) 
+            {
+                $query = "INSERT INTO comments (feedId,feedComment,userId) VALUES (?,?,?)";
+                $stmt = $this->con->prepare($query);
+                $stmt->bind_param("sss",$feedId,$feedComment,$userId);
+                if ($stmt->execute())
+                    return FEED_COMMENT_ADDED;
+                else
+                    return FEED_COMMENT_ADD_FAILED;
+            }
+            else
+                return FEED_COMMENT_ADD_FAILED;
+        }
     }
 
     function deleteFeedComment($commentId, $userId)
@@ -1166,22 +1472,23 @@ class DbHandler
             $feedPrivacy = '1';
         if ($this->isUserAlreadyBlocked($this->getUserId(),$userId))
             return $feedsData;
-        $query = "SELECT feedId, userId, feedContent, feedImage, feedVideo, feedThumbnail, feedType, timestamp FROM feeds WHERE userId=? AND feedPrivacy IN ($feedPrivacy) order by timestamp desc";
+        $query = "SELECT feedId, userId, feedContent, feedImage, feedVideo, feedThumbnail, feedType,feedPrivacy, timestamp FROM feeds WHERE userId=? AND feedPrivacy IN ($feedPrivacy) order by timestamp desc";
         $stmt = $this->con->prepare($query);
         $stmt->bind_param("s",$userId);
         $stmt->execute();
-        $stmt->bind_result($id,$userId,$content,$image,$feedVideo,$feedThumbnail,$feedType,$timestamp);
+        $stmt->bind_result($id,$userId,$content,$image,$feedVideo,$feedThumbnail,$feedType,$feedPrivacy,$timestamp);
         while ($stmt->fetch()) 
         {
             $feed = array();
             $feed['feedId'] = $id;
             $feed['feedContent'] = $content;
-            $feed['feedImage'] = WEBSITE_DOMAIN.$image;
+            $feed['feedImage'] = $image;
             $feed['feedTimestamp'] = $timestamp;
             $feed['userId'] = $userId;
             $feed['feedVideo'] = $feedVideo;
             $feed['feedThumbnail'] = $feedThumbnail;
             $feed['feedType'] = $feedType;
+            $feed['feedPrivacy'] = $feedPrivacy;
             array_push($feeds, $feed);
         }
         foreach ($feeds as $feedList) 
@@ -1199,6 +1506,7 @@ class DbHandler
             $feed['feedLikes']      =    $this->getLikesCountByFeedId($feedList['feedId']);
             $feed['feedComments']   =    $this->getCommentsCountByFeedId($feedList['feedId']);
             $feed['feedType']       =    $feedList['feedType'];
+            $feed['feedPrivacy']       =    $feedList['feedPrivacy'];
             if ($feed['feedType'] == "video") 
             {
                 $feed['feedVideo'] = WEBSITE_DOMAIN.$feedList['feedVideo'];
@@ -1211,6 +1519,99 @@ class DbHandler
             array_push($feedsData, $feed);
         }
         return $feedsData;
+    }
+
+    function getHiddenFeeds()
+    {
+        $tokenId = $this->getUserId();
+        $relationFriend = 1;
+        $friends = array();
+        $publics = array();
+        $usersId = array();
+        $feed = array();
+        $feeds = array(); 
+        $feedsData = array();
+        $hiddenFeedId = $this->getAllHiddenFeedId(1);
+        foreach ($hiddenFeedId as $id) 
+        {
+            $hiddenFeed = $this->getFeedById($id);
+            print_r($hiddenFeed);
+        }
+        // foreach ($hiddenFeedId as $id) 
+        // {
+        //     $userId = $this->getFeedAuthorIdByFeedId($id);
+        //     if ($this->isAlreadyFriend($tokenId,$userId)) 
+        //     {
+        //         $friendss = array_push($friends, $userId);
+        //         print_r($friendss);
+        //     }
+        //     else
+        //     {
+        //         // $friends = array_push($friends, $userId);
+        //         // print_r($friends);
+        //     }
+        //     print($userId);
+        // }
+        // if ($this->isAlreadyFriend($this->getUserId(),$userId))
+        //     $feedPrivacy = implode(',',array('1','2'));
+        // else if ($userId===$this->getUserId())
+        //     $feedPrivacy = implode(',',array('1','2','3'));
+        // else
+        //     $feedPrivacy = '1';
+        // if (empty($hiddenFeedId)) 
+        // {
+        //     $query = "SELECT feedId, userId, feedContent, feedImage, feedVideo, feedThumbnail, feedType,feedPrivacy, timestamp FROM feeds WHERE userId=? AND feedPrivacy IN ($feedPrivacy) order by timestamp desc";
+        // }
+        // else
+        // {
+        //     $query = "SELECT feedId, userId, feedContent, feedImage, feedVideo, feedThumbnail, feedType,feedPrivacy, timestamp FROM feeds WHERE userId=? AND feedPrivacy IN ($feedPrivacy) order by timestamp desc";
+        // }
+        // $stmt = $this->con->prepare($query);
+        // $stmt->bind_param("s",$userId);
+        // $stmt->execute();
+        // $stmt->bind_result($id,$userId,$content,$image,$feedVideo,$feedThumbnail,$feedType,$feedPrivacy,$timestamp);
+        // while ($stmt->fetch()) 
+        // {
+        //     $feed = array();
+        //     $feed['feedId'] = $id;
+        //     $feed['feedContent'] = $content;
+        //     $feed['feedImage'] = WEBSITE_DOMAIN.$image;
+        //     $feed['feedTimestamp'] = $timestamp;
+        //     $feed['userId'] = $userId;
+        //     $feed['feedVideo'] = $feedVideo;
+        //     $feed['feedThumbnail'] = $feedThumbnail;
+        //     $feed['feedType'] = $feedType;
+        //     $feed['feedPrivacy'] = $feedPrivacy;
+        //     array_push($feeds, $feed);
+        // }
+        // foreach ($feeds as $feedList) 
+        // {   
+        //     $feed = array();
+        //     $users = array();
+        //     $users = $this->getUserById($userId);
+        //     $feed['userId']         =    $users['id'];
+        //     $feed['userName']       =    $users['name'];
+        //     $feed['userUsername']   =    $users['username'];
+        //     $feed['userImage']      =    $users['image'];
+        //     $feed['userStatus']   =    $users['status'];
+        //     $feed['feedId']         =    $feedList['feedId'];
+        //     $feed['liked']          =    $this->checkFeedLike($userId,$feedList['feedId']);
+        //     $feed['feedLikes']      =    $this->getLikesCountByFeedId($feedList['feedId']);
+        //     $feed['feedComments']   =    $this->getCommentsCountByFeedId($feedList['feedId']);
+        //     $feed['feedType']       =    $feedList['feedType'];
+        //     $feed['feedPrivacy']       =    $feedList['feedPrivacy'];
+        //     if ($feed['feedType'] == "video") 
+        //     {
+        //         $feed['feedVideo'] = WEBSITE_DOMAIN.$feedList['feedVideo'];
+        //         $feed['feedThumbnail'] = WEBSITE_DOMAIN.$feedList['feedThumbnail'];
+        //     }
+        //     else if ($feed['feedType']=="image")
+        //         $feed['feedImage']      =    WEBSITE_DOMAIN.$feedList['feedImage'];
+        //     $feed['feedContent']    =    $feedList['feedContent'];
+        //     $feed['feedTimestamp']  =    $feedList['feedTimestamp'];
+        //     array_push($feedsData, $feed);
+        // }
+        // return $feedsData;
     }
 
     // function getAllFriendsId($userId)
@@ -1326,11 +1727,46 @@ class DbHandler
         return $user;
     }
 
+    function getAllUsersById($usersId)
+    {
+        $users = array();
+        $uId = implode(',',$usersId);
+        $query = "SELECT id,name,username,email,bio,image,status FROM users WHERE id IN ($uId)";
+        $stmt = $this->con->prepare($query);
+        $stmt->execute();
+        $stmt->bind_result($id,$name,$username,$email,$bio,$image,$status);
+        while($stmt->fetch())
+        {
+            $user['id'] = $id;
+            $user['name'] = $name;
+            $user['username'] = $username;
+            $user['email'] = $email;
+            $user['bio'] = $bio;
+            if (empty($image))
+                $image = DEFAULT_USER_IMAGE;
+            $user['image'] = WEBSITE_DOMAIN.$image;
+            $user['status'] = $status;
+            array_push($users, $user);
+        }
+        return $users;
+    }
+
     function getUserIdByUsername($username)
     {
         $query = "SELECT id FROM users WHERE username=?";
         $stmt = $this->con->prepare($query);
         $stmt->bind_param('s',$username);
+        $stmt->execute();
+        $stmt->bind_result($id);
+        $stmt->fetch();
+        return $id;
+    }
+
+    function getUserIdByEmail($email)
+    {
+        $query = "SELECT id FROM users WHERE email=?";
+        $stmt = $this->con->prepare($query);
+        $stmt->bind_param('s',$email);
         $stmt->execute();
         $stmt->bind_result($id);
         $stmt->fetch();
@@ -1507,7 +1943,10 @@ class DbHandler
                 {
                     $code = rand(100000,999999);
                     $name = $this->getNameByEmail($email);
-                    if($this->updateCode($email,$code))
+                    $tokenId = $this->getUserIdByEmail($email);
+                    $this->setUserId($tokenId);
+                    $codeForForgotPassword = 2;
+                    if($this->updateCode($code,$codeForForgotPassword))
                         return CODE_UPDATED;
                     else
                         return CODE_UPDATE_FAILED;
@@ -1530,9 +1969,11 @@ class DbHandler
             {
                 if($this->isEmailVerified($email))
                 {
-                    $hashCode = decrypt($this->getCodeByEmail($email));
-                    if($code==$hashCode)
-                    {
+                    $codeForForgotPassword = 2;
+                    $tokenId = $this->getUserIdByEmail($email);
+                    $this->setUserId($tokenId);
+                    if ($this->verifyCode($code,$codeForForgotPassword)) 
+                    {                
                         $hashPass = password_hash($newPassword,PASSWORD_DEFAULT);
                         $query = "UPDATE users SET password=? WHERE email=?";
                         $stmt = $this->con->prepare($query);
@@ -1540,11 +1981,12 @@ class DbHandler
                         if($stmt->execute())
                         {
                             $randCode = password_hash(rand(100000,999999),PASSWORD_DEFAULT);
-                            $this->updateCode($email,$randCode);
+                            $codeForDefault = 0;
+                            $this->updateCode($randCode,$codeForDefault);
                             return PASSWORD_RESET;
                         }
                         return PASSWORD_RESET_FAILED;
-                    } 
+                    }
                     return CODE_WRONG;
                 }
                 return EMAIL_NOT_VERIFIED;
@@ -1563,11 +2005,6 @@ class DbHandler
             {
                 if(!$this->isEmailVerified($email))
                 {
-                    $code = $this->getCodeByEmail($email);
-                    $name = $this->getNameByEmail($email);
-                    $result['code'] = $code;
-                    $result['email'] = $email;
-                    $result['name'] = $name;
                     return SEND_CODE;
                 }
                 return EMAIL_ALREADY_VERIFIED;
@@ -1577,24 +2014,15 @@ class DbHandler
         return EMAIL_NOT_VALID;
     }
 
-    function updateCode($email,$code)
-    {
-        $hashCode = encrypt($code);
-        $query = "UPDATE users SET code=? WHERE email=?";
-        $stmt = $this->con->prepare($query);
-        $stmt->bind_param('ss',$hashCode,$email);
-        if($stmt->execute())
-            return true;
-        else
-            return false;
-    }
-
     function verfiyEmail($email,$code)
     {
         $result = array();
         if($this->isEmailExist($email))
         {
-            $dbCode = $this->getCodeByEmail($email);
+            $tokenId = $this->getUserIdByEmail($email);
+            $this->setUserId($tokenId);
+            $codeForEmailVerification = 1;
+            $dbCode = $this->getCode($codeForEmailVerification);
             if($dbCode==$code)
             { 
                 if(!$this->isEmailVerified($email))
@@ -1752,6 +2180,17 @@ class DbHandler
         return WEBSITE_DOMAIN.$image;
     }
 
+    function getImageByIdWithoutFullLink($userId)
+    {
+        $query = "SELECT image FROM users WHERE id=?";
+        $stmt = $this->con->prepare($query);
+        $stmt->bind_param('s',$userId);
+        $stmt->execute();
+        $stmt->bind_result($image);
+        $stmt->fetch();
+        return $image;
+    }
+
     function getImageByFeedId($feedId)
     {
         $query = "SELECT feedImage FROM feeds WHERE feedId=?";
@@ -1778,6 +2217,53 @@ class DbHandler
     function getUsers($tokenId)
     {
 
+        $blocked = array_merge($this->getUserIdWhoBlockedMe($this->getUserId()),$this->getUsersWhichIHaveBlocked($this->getUserId()));
+        if (empty($blocked))
+            $url = "SELECT id,name,username,email,image,status FROM users WHERE id !=? AND verified != ?";
+        else
+        {
+            $blocked = implode(',', $blocked);
+            $url = "SELECT id,name,username,email,image,status FROM users WHERE id !=? AND verified != ? AND id NOT IN ($blocked)";
+        }
+        $stmt = $this->con->prepare($url);
+        $verified = "0";
+        $stmt->bind_param("ss",$tokenId,$verified);
+        $stmt->execute();
+        $stmt->bind_result($id,$name,$username,$email,$image,$status);
+        $users = array();
+        $usersData = array();
+        while ($stmt->fetch()) {
+            $user = array();
+            $user['id'] = $id;
+            $user['name'] = $name;
+            $user['username'] = $username;
+            $user['email'] = $email;
+            if (empty($image))
+                $image = DEFAULT_USER_IMAGE;
+            $user['image'] = WEBSITE_DOMAIN.$image;
+            $user['status'] = $status;
+            array_push($users, $user);
+        }
+        foreach ($users as $user) 
+        {   
+            $result = $this->getFriendshipStatus($tokenId,$user['id']);
+            if ($result==NOT_A_FRIEND)
+                $friendshipStatus = 0;
+            else if ($result==ALREADY_FRIEND)
+                $friendshipStatus = 1;
+            else if ($result==FRIEND_REQUEST_SENDER)
+                $friendshipStatus = 2;
+            else if ($result==FRIEND_REQUEST_RECEIVER)
+                $friendshipStatus = 3;
+            $user['friendshipStatus'] = $friendshipStatus;
+            array_push($usersData, $user);
+        }
+        return $usersData;
+    }
+
+    function getUsersByKeyword($keyword)
+    {
+        $tokenId = $this->getUserId();
         $blocked = array_merge($this->getUserIdWhoBlockedMe($this->getUserId()),$this->getUsersWhichIHaveBlocked($this->getUserId()));
         if (empty($blocked))
             $url = "SELECT id,name,username,email,image,status FROM users WHERE id !=? AND verified != ?";
@@ -1929,7 +2415,7 @@ class DbHandler
 
     function getCodeByEmail($email)
     {
-        $query = "SELECT code FROM users WHERE email=?";
+        $query = "SELECT code FROM codes WHERE email=?";
         $stmt = $this->con->prepare($query);
         $stmt->bind_param('s',$email);
         $stmt->execute();
@@ -1941,10 +2427,206 @@ class DbHandler
     function setEmailIsVerfied($email)
     {
         $status = 1;
-        $query = "UPDATE users SET status=? WHERE email =?";
+        $query = "UPDATE users SET verified=? WHERE email =?";
         $stmt = $this->con->prepare($query);
         $stmt->bind_param('ss',$status,$email);
         if($stmt->execute())
+            return true;
+        else
+            return false;
+    }
+
+    function deleteAccount()
+    {
+        $this->deleteAllNotifications();
+        $this->deleteAllFeeds();
+        $this->deleteAllBlocks();
+        $this->deleteAllCodes();
+        $this->deleteAllComments();
+        $this->deleteAllCommentLikes();
+        $this->deleteAllFriendRequests();
+        $this->deleteAllFriends();
+        $this->deleteAllFeedLikes();
+        $this->deleteAllVerificationRequests();
+        $this->deleteAllReports();
+        $this->deleteUser();
+        return true;
+    }
+
+    function deleteAllCommentLikes()
+    {
+        $tokenId = $this->getUserId();
+        $query = "DELETE FROM comments_likes WHERE userId=?";
+        $stmt = $this->con->prepare($query);
+        $stmt->bind_param("s",$tokenId);
+        if ($stmt->execute())
+            return true;
+        else
+            return false;
+    }
+
+    function deleteUser()
+    {
+        $tokenId = $this->getUserId();
+        $query = "DELETE FROM users WHERE id=?";
+        $stmt = $this->con->prepare($query);
+        $stmt->bind_param("s",$tokenId);
+        if ($stmt->execute())
+            return true;
+        else
+            return false;
+    }
+
+    //deleting here all the reports which the requester or current user is reported, but not deleting other person reporsts which they have maked reports on the current user's feed
+    function deleteAllReports()
+    {
+        $tokenId = $this->getUserId();
+        $query = "DELETE FROM reports WHERE userId=?";
+        $stmt = $this->con->prepare($query);
+        $stmt->bind_param("s",$tokenId);
+        if ($stmt->execute())
+            return true;
+        else
+            return false;
+    }
+
+    function deleteAllVerificationRequests()
+    {
+        $tokenId = $this->getUserId();
+        $query = "DELETE FROM comments_likes WHERE userId=?";
+        $stmt = $this->con->prepare($query);
+        $stmt->bind_param("s",$tokenId);
+        if ($stmt->execute())
+            return true;
+        else
+            return false;
+    }
+
+    function deleteAllFeedLikes()
+    {
+        $tokenId = $this->getUserId();
+        $query = "DELETE FROM likes WHERE userId=?";
+        $stmt = $this->con->prepare($query);
+        $stmt->bind_param("s",$tokenId);
+        if ($stmt->execute())
+            return true;
+        else
+            return false;
+    }
+
+    function deleteAllFriendRequests()
+    {
+        $tokenId = $this->getUserId();
+        $query = "DELETE FROM friendrequests WHERE senderId=? OR receiverId=?";
+        $stmt =  $this->con->prepare($query);
+        $stmt->bind_param("ss",$tokenId,$tokenId);
+        if ($stmt->execute())
+            return true;
+        else
+            return false;
+    }
+
+    function deleteAllFriends()
+    {
+        $tokenId = $this->getUserId();
+        $query = "DELETE FROM friends WHERE userOne=? OR userTwo=?";
+        $stmt = $this->con->prepare($query);
+        $stmt->bind_param("ss",$tokenI,$tokenId);
+        if ($stmt->execute())
+            return true;
+        else
+            return false;
+    }
+
+    function deleteAllComments()
+    {
+        $tokenId = $this->getUserId();
+        $query = "DELETE FROM comments WHERE userId=?";
+        $stmt = $this->con->prepare($query);
+        $stmt->bind_param("s",$tokenId);
+        if ($stmt->execute())
+            return true;
+        else
+            return false;
+    }
+
+    function deleteAllFeeds()
+    {
+        $tokenId = $this->getUserId();
+        $query = "DELETE FROM feeds WHERE userId=?";
+        $stmt = $this->con->prepare($query);
+        $stmt->bind_param("s",$tokenId);
+        if ($stmt->execute())
+            return true;
+        else
+            return false;
+    }
+
+    function deleteAllCodes()
+    {
+        $tokenId = $this->getUserId();
+        $query = "DELETE FROM codes WHERE userId=?";
+        $stmt = $this->con->prepare($query);
+        $stmt->bind_param("s",$tokenId);
+        if ($stmt->execute())
+            return true;
+        else
+            return false;
+    }
+
+    function deleteAllBlocks()
+    {
+        $tokenId = $this->getUserId();
+        $query = "DELETE from block WHERE fromUserId=? OR toUserId=?";
+        $stmt = $this->con->prepare($query);
+        $stmt->bind_param("ss",$tokenId,$tokenId);
+        if ($stmt->execute())
+            return true;
+        else
+            return false;
+    }
+
+    function setCode($code,$codeType)
+    {
+        $tokenId = $this->getUserId();
+        $query = "INSERT INTO codes (userId,codeType,code) VALUES(?,?,?)";
+        $stmt = $this->con->prepare($query);
+        $stmt->bind_param('sss',$tokenId,$codeType,$code);
+        if($stmt->execute())
+            return true;
+        else
+            return false;
+    }
+
+    function updateCode($code,$codeType)
+    {
+        $tokenId = $this->getUserId();
+        $hashCode = encrypt($code);
+        $query = "UPDATE codes SET code=?, codeType=? WHERE userId =?";
+        $stmt = $this->con->prepare($query);
+        $stmt->bind_param('sss',$hashCode,$codeType,$tokenId);
+        if($stmt->execute())
+            return true;
+        else
+            return false;
+    }
+
+    function getCode($codeType)
+    {
+        $tokenId = $this->getUserId();
+        $query = "SELECT code FROM codes WHERE userId=? AND codeType=?";
+        $stmt = $this->con->prepare($query);
+        $stmt->bind_param('ss',$tokenId,$codeType);
+        $stmt->execute();
+        $stmt->bind_result($code);
+        $stmt->fetch();
+        return $code;
+    }
+
+    function verifyCode($code,$codeType)
+    {
+        $dbCode = $this->decrypt($this->getCode($codeType));
+        if ($code==$dbCode)
             return true;
         else
             return false;

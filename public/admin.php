@@ -26,7 +26,7 @@ $app = new Slim\App([
 ]);
 
 
-$app->post('/login', function(Request $request, Response $response)
+$app->post('admin/login', function(Request $request, Response $response)
 {
     if(!checkEmptyParameter(array('email','password'),$request,$response))
     {
@@ -57,33 +57,32 @@ $app->post('/login', function(Request $request, Response $response)
             }
             else if($result ==USER_NOT_FOUND)
             {
-                returnException(true,"Email Is Not Registered",$response);
+                return returnException(true,"Email Is Not Registered",$response);
             }
             else if($result ==PASSWORD_WRONG)
             {
-                returnException(true,"Wrong Password",$response);
+                return returnException(true,"Wrong Password",$response);
             }
             else if($result ==UNVERIFIED_EMAIL)
             {
-                returnException(true,"Email Is Not Verified",$response);
+                return returnException(true,"Email Is Not Verified",$response);
             }
             else
             {
-                returnException(true,"Something Went Wrong",$response);
+                return returnException(true,"Something Went Wrong",$response);
             }
         }
         else
         {
-            returnException(true,"Email or Username is Wrong",$response);
+            return returnException(true,"Email or Username is Wrong",$response);
         }
     }
 });
 
-
-$app->get('/feeds', function(Request $request, Response $response)
+$app->get('admin/feeds', function(Request $request, Response $response)
 {
     $db = new DbHandler;
-    if (validateToken($db,$request,$response)) 
+    if (validateAdminToken($db,$request,$response)) 
     {
         $feeds = $db->getFeeds();
         if (!empty($feeds)) 
@@ -98,15 +97,15 @@ $app->get('/feeds', function(Request $request, Response $response)
         }
         else
         {
-            returnException(true,"Feeds Not Found",$response);
+            return returnException(true,"Feeds Not Found",$response);
         }
     }
 });
 
-$app->get('/users', function(Request $request, Response $response)
+$app->get('admin/users', function(Request $request, Response $response)
 {
     $db = new AdminDbHandler;
-    if (validateToken($db,$request,$response)) 
+    if (validateAdminToken($db,$request,$response)) 
     {
             $id = $db->getUserId();
             $users = $db->getUsers($id);
@@ -122,15 +121,15 @@ $app->get('/users', function(Request $request, Response $response)
             }
             else
             {
-                returnException(true,"No User Found",$response);
+                return returnException(true,"No User Found",$response);
             }
     }
 });
 
-$app->get('/feeds/count', function(Request $request, Response $response, array $args)
+$app->get('admin/feeds/count', function(Request $request, Response $response, array $args)
 {
     $db = new AdminDbHandler;
-    if(validateToken($db,$request,$response))
+    if(validateAdminToken($db,$request,$response))
     {
         $tokenId = $db->getUserId();
         if ($db->checkUserById($tokenId)) 
@@ -146,15 +145,15 @@ $app->get('/feeds/count', function(Request $request, Response $response, array $
         }
         else
         {
-            returnException(true,"Username Not Exist",$response);
+            return returnException(true,"Username Not Exist",$response);
         }
     }
 });
 
-$app->get('/flags/count', function(Request $request, Response $response, array $args)
+$app->get('admin/flags/count', function(Request $request, Response $response, array $args)
 {
     $db = new AdminDbHandler;
-    if(validateToken($db,$request,$response))
+    if(validateAdminToken($db,$request,$response))
     {
         $tokenId = $db->getUserId();
         if ($db->checkUserById($tokenId)) 
@@ -170,15 +169,15 @@ $app->get('/flags/count', function(Request $request, Response $response, array $
         }
         else
         {
-            returnException(true,"Username Not Exist",$response);
+            return returnException(true,"Username Not Exist",$response);
         }
     }
 });
 
-$app->get('/contacts/count', function(Request $request, Response $response, array $args)
+$app->get('admin/contacts/count', function(Request $request, Response $response, array $args)
 {
     $db = new AdminDbHandler;
-    if(validateToken($db,$request,$response))
+    if(validateAdminToken($db,$request,$response))
     {
         $tokenId = $db->getUserId();
         if ($db->checkUserById($tokenId)) 
@@ -194,15 +193,15 @@ $app->get('/contacts/count', function(Request $request, Response $response, arra
         }
         else
         {
-            returnException(true,"Username Not Exist",$response);
+            return returnException(true,"Username Not Exist",$response);
         }
     }
 });
 
-$app->get('/feedbacks/count', function(Request $request, Response $response, array $args)
+$app->get('admin/feedbacks/count', function(Request $request, Response $response, array $args)
 {
     $db = new AdminDbHandler;
-    if(validateToken($db,$request,$response))
+    if(validateAdminToken($db,$request,$response))
     {
         $tokenId = $db->getUserId();
         if ($db->checkUserById($tokenId)) 
@@ -218,15 +217,15 @@ $app->get('/feedbacks/count', function(Request $request, Response $response, arr
         }
         else
         {
-            returnException(true,"Username Not Exist",$response);
+            return returnException(true,"Username Not Exist",$response);
         }
     }
 });
 
-$app->get('/requests/count', function(Request $request, Response $response, array $args)
+$app->get('admin/requests/count', function(Request $request, Response $response, array $args)
 {
     $db = new AdminDbHandler;
-    if(validateToken($db,$request,$response))
+    if(validateAdminToken($db,$request,$response))
     {
         $tokenId = $db->getUserId();
         if ($db->checkUserById($tokenId)) 
@@ -242,15 +241,15 @@ $app->get('/requests/count', function(Request $request, Response $response, arra
         }
         else
         {
-            returnException(true,"Username Not Exist",$response);
+            return returnException(true,"Username Not Exist",$response);
         }
     }
 });
 
-$app->get('/users/count', function(Request $request, Response $response, array $args)
+$app->get('admin/users/count', function(Request $request, Response $response, array $args)
 {
     $db = new AdminDbHandler;
-    if(validateToken($db,$request,$response))
+    if(validateAdminToken($db,$request,$response))
     {
         $tokenId = $db->getUserId();
         if ($db->checkUserById($tokenId)) 
@@ -266,15 +265,15 @@ $app->get('/users/count', function(Request $request, Response $response, array $
         }
         else
         {
-            returnException(true,"Username Not Exist",$response);
+            return returnException(true,"Username Not Exist",$response);
         }
     }
 });
 
-$app->get('/user', function(Request $request, Response $response, array $args)
+$app->get('admin/user', function(Request $request, Response $response, array $args)
 {
     $db = new AdminDbHandler;
-    if(validateToken($db,$request,$response))
+    if(validateAdminToken($db,$request,$response))
     {
         $tokenId = $db->getUserId();
         if ($db->checkUserById($tokenId)) 
@@ -290,64 +289,11 @@ $app->get('/user', function(Request $request, Response $response, array $args)
         }
         else
         {
-            returnException(true,"Username Not Exist",$response);
+            return returnException(true,"Username Not Exist",$response);
         }
     }
 });
 
-
-
-function checkEmptyParameter($requiredParameter,$request,$response)
-{
-    $result = array();
-    $error = false;
-    $errorParam = '';
-    $requestParameter = $request->getParsedBody();
-    foreach($requiredParameter as $param)
-    {
-        if(!isset($requestParameter[$param]) || strlen($requestParameter[$param])<1)
-        {
-            $error = true;
-            $errorParam .= $param.', ';
-        }
-    }
-    if($error)
-    {
-        returnException(true,"Required Parameter ".substr($errorParam,0,-2)." is missing",$response);
-    }
-    return $error;
-}
-
-
-function sendMail($name,$email,$mailSubject,$mailBody)
-{
-    $websiteEmail = WEBSITE_EMAIL;
-    $websiteEmailPassword = WEBSITE_EMAIL_PASSWORD;
-    $websiteName = WEBSITE_NAME;
-    $websiteOwnerName = WEBSITE_OWNER_NAME;
-    $mail = new PHPMailer;
-    $mail->SMTPDebug = 0;
-    $mail->isSMTP();
-    // $mail->Host="smtp.gmail.com";
-    // $mail->Port=587;
-    $mail->Host="free.mboxhosting.com";
-    $mail->Port=25;
-    $mail->SMPTSecure="tls";
-    $mail->SMTPAuth=true;
-    $mail->Username = $websiteEmail;
-    $mail->Password = $websiteEmailPassword;
-    $mail->addAddress($email,$name);
-    $mail->isHTML();
-    $mail->Subject=$mailSubject;
-    $mail->Body=$mailBody;
-    $mail->From=$websiteEmail;
-    $mail->FromName=$websiteName;
-    if($mail->send())
-    {
-        return true;
-    }
-    return false;
-}
 
 function encrypt($data)
 {
@@ -387,7 +333,7 @@ function getToken($userId)
     return $token;
 }
 
-function validateToken($db,$request,$response)
+function validateAdminToken($db,$request,$response)
 {
     $error = false;
     $header =$request->getHeaders();
@@ -395,30 +341,22 @@ function validateToken($db,$request,$response)
     {
         $token = $header['HTTP_TOKEN'][0];
         $result = $db->validateToken($token);
-        if (!$result == JWT_TOKEN_FINE) 
-        {
+        if (!$result == JWT_TOKEN_FINE)
             $error = true;
-        }
         else if($result == JWT_TOKEN_ERROR || $result==JWT_USER_NOT_FOUND)
         {
-            returnException(true,"Token Error...! Please Login Again",$response);
             $error = true;
         }
     }
 
     else
     {
-        returnException(true,"Invalid Token, Please Login Again",$response);
         $error = true;
     }
-    if ($error) 
-    {
+    if ($error)
         return false;
-    }
     else
-    {
         return true;
-    }
 }
 
 $app->run();

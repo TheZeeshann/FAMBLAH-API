@@ -10,6 +10,7 @@ use PHPMailer\PHPMailer\Exception;
 //use Slim\Factory\AppFactory
 require '../vendor/autoload.php';
 require_once '../include/DbHandler.php';
+require_once '../include/AdminDbHandler.php';
 require_once '../vendor/autoload.php';
 require_once '../include/JWT.php';
 
@@ -25,6 +26,295 @@ $app = new Slim\App([
     ]
 ]);
 
+/******************************** ADMIN SECTION ********************************/
+
+$app->post('/admin/login', function(Request $request, Response $response)
+{
+    if(!checkEmptyParameter(array('email','password'),$request,$response))
+    {
+        $db = new AdminDbHandler;
+        $requestParameter = $request->getParsedBody();
+        $email = $requestParameter['email'];
+        $password = $requestParameter['password'];
+        if (!$db->isEmailValid($email)) 
+        {
+            $email = trim(preg_replace('/ +/', ' ', preg_replace('/[^A-Za-z0-9 ]/', ' ', urldecode(html_entity_decode(strip_tags($email))))));
+            $email = str_replace(' ', '', $email);
+            $email = $db->getEmailByUsername($email);
+        }
+        if (!empty($email)) 
+        {
+            $result = $db->login($email,$password);
+            if($result ==LOGIN_SUCCESSFULL)
+            {
+                $user = $db->getUserByEmail($email);
+                $user['token'] =getAdminToken($user['id']);
+                $responseUserDetails = array();
+                $responseUserDetails['error'] = false;
+                $responseUserDetails['message'] = LOGIN_SUCCESSFULL;
+                $responseUserDetails['user'] = $user;
+                $response->write(json_encode($responseUserDetails));
+                return $response->withHeader(CT, AJ)
+                         ->withStatus(200);
+            }
+            else if($result ==USER_NOT_FOUND)
+            {
+                return returnException(true,EMAIL_NOT_EXIST,$response);
+            }
+            else if($result ==PASSWORD_WRONG)
+            {
+                return returnException(true,PASSWORD_WRONG,$response);
+            }
+            else if($result ==UNVERIFIED_EMAIL)
+            {
+                return returnException(true,EMAIL_NOT_VERIFIED,$response);
+            }
+            else
+            {
+                return returnException(true,SWW,$response);
+            }
+        }
+        else
+        {
+            return returnException(true,USERNAME_NOT_EXIST,$response);
+        }
+    }
+});
+
+$app->get('/admin/feeds', function(Request $request, Response $response)
+{
+    $db = new AdminDbHandler; 
+    if (validateAdminToken($db,$request,$response))
+    {
+        $feeds = $db->getFeeds();
+        if (!empty($feeds)) 
+        {
+            $responseFeedDetails = array();
+            $responseFeedDetails['error'] = false;
+            $responseFeedDetails['message'] = "Feed List Found";
+            $responseFeedDetails['feeds'] = $feeds;
+            $response->write(json_encode($responseFeedDetails));
+            return $response->withHeader(CT,AJ)
+                            ->withStatus(200);
+        }
+        else
+        {
+            return returnException(true,"Feeds Not Found",$response);
+        }
+    }
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
+});
+
+$app->get('/admin/users', function(Request $request, Response $response)
+{
+    $db = new AdminDbHandler;
+    if (validateAdminToken($db,$request,$response)) 
+    {
+            $id = $db->getUserId();
+            $users = $db->getUsers($id);
+            if (!empty($users)) 
+            {
+                $responseUserDetails = array();
+                $responseUserDetails['error'] = false;
+                $responseUserDetails['message'] = "Users List Found";
+                $responseUserDetails['users'] = $users;
+                $response->write(json_encode($responseUserDetails));
+                return $response->withHeader(CT, AJ)
+                         ->withStatus(200);
+            }
+            else
+            {
+                return returnException(true,"No User Found",$response);
+            }
+    }
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
+});
+
+$app->get('/admin/feeds/count', function(Request $request, Response $response, array $args)
+{
+    $db = new AdminDbHandler;
+    if(validateAdminToken($db,$request,$response))
+    {
+        $tokenId = $db->getUserId();
+        if ($db->checkUserById($tokenId)) 
+        {
+            $feedsCount = $db->getFeedsCount();
+            $result = array();
+            $result['error'] = false;
+            $result['message'] = "Notifications Count Found";
+            $result['feedsCount'] = $feedsCount;
+            $response->write(json_encode($result));
+            return $response->withHeader(CT,AJ)
+                            ->withStatus(200);
+        }
+        else
+        {
+            return returnException(true,USERNAME_NOT_EXIST,$response);
+        }
+    }
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
+});
+
+$app->get('/admin/flags/count', function(Request $request, Response $response, array $args)
+{
+    $db = new AdminDbHandler;
+    if(validateAdminToken($db,$request,$response))
+    {
+        $tokenId = $db->getUserId();
+        if ($db->checkUserById($tokenId)) 
+        {
+            $feedsCount = $db->getFlagsCount();
+            $result = array();
+            $result['error'] = false;
+            $result['message'] = "Flags Count Found";
+            $result['flagsCount'] = $feedsCount;
+            $response->write(json_encode($result));
+            return $response->withHeader(CT,AJ)
+                            ->withStatus(200);
+        }
+        else
+        {
+            return returnException(true,USERNAME_NOT_EXIST,$response);
+        }
+    }
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
+});
+
+$app->get('/admin/contacts/count', function(Request $request, Response $response, array $args)
+{
+    $db = new AdminDbHandler;
+    if(validateAdminToken($db,$request,$response))
+    {
+        $tokenId = $db->getUserId();
+        if ($db->checkUserById($tokenId)) 
+        {
+            $contactsCount = $db->getContactsCount();
+            $result = array();
+            $result['error'] = false;
+            $result['message'] = "Contacts Count Found";
+            $result['contactsCount'] = $contactsCount;
+            $response->write(json_encode($result));
+            return $response->withHeader(CT,AJ)
+                            ->withStatus(200);
+        }
+        else
+        {
+            return returnException(true,USERNAME_NOT_EXIST,$response);
+        }
+    }
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
+});
+
+$app->get('/admin/feedbacks/count', function(Request $request, Response $response, array $args)
+{
+    $db = new AdminDbHandler;
+    if(validateAdminToken($db,$request,$response))
+    {
+        $tokenId = $db->getUserId();
+        if ($db->checkUserById($tokenId)) 
+        {
+            $feedbacksCount = $db->getFeedbacksCount();
+            $result = array();
+            $result['error'] = false;
+            $result['message'] = "Feedback Count Found";
+            $result['feedbacksCount'] = $feedbacksCount;
+            $response->write(json_encode($result));
+            return $response->withHeader(CT,AJ)
+                            ->withStatus(200);
+        }
+        else
+        {
+            return returnException(true,USERNAME_NOT_EXIST,$response);
+        }
+    }
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
+});
+
+$app->get('/admin/requests/count', function(Request $request, Response $response, array $args)
+{
+    $db = new AdminDbHandler;
+    if(validateAdminToken($db,$request,$response))
+    {
+        $tokenId = $db->getUserId();
+        if ($db->checkUserById($tokenId)) 
+        {
+            $requestsCount = $db->getRequestsCount();
+            $result = array();
+            $result['error'] = false;
+            $result['message'] = "Request Count Found";
+            $result['requestsCount'] = $requestsCount;
+            $response->write(json_encode($result));
+            return $response->withHeader(CT,AJ)
+                            ->withStatus(200);
+        }
+        else
+        {
+            return returnException(true,USERNAME_NOT_EXIST,$response);
+        }
+    }
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
+});
+
+$app->get('/admin/users/count', function(Request $request, Response $response, array $args)
+{
+    $db = new AdminDbHandler;
+    if(validateAdminToken($db,$request,$response))
+    {
+        $tokenId = $db->getUserId();
+        if ($db->checkUserById($tokenId)) 
+        {
+            $usersCount = $db->getUsersCount();
+            $result = array();
+            $result['error'] = false;
+            $result['message'] = "Users Count Found";
+            $result['usersCount'] = $usersCount;
+            $response->write(json_encode($result));
+            return $response->withHeader(CT,AJ)
+                            ->withStatus(200);
+        }
+        else
+        {
+            return returnException(true,USERNAME_NOT_EXIST,$response);
+        }
+    }
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
+});
+
+$app->get('/admin/user', function(Request $request, Response $response, array $args)
+{
+    $db = new AdminDbHandler;
+    if(validateAdminToken($db,$request,$response))
+    {
+        $tokenId = $db->getUserId();
+        if ($db->checkUserById($tokenId)) 
+        {
+            $user = $db->getUserById($tokenId);
+            $responseUserDetails = array();
+            $responseUserDetails['error'] = false;
+            $responseUserDetails['message'] = USER_FOUND;
+            $responseUserDetails['user'] = $user;
+            $response->write(json_encode($responseUserDetails));
+            return $response->withHeader(CT,AJ)
+                            ->withStatus(200);
+        }
+        else
+        {
+            return returnException(true,USERNAME_NOT_EXIST,$response);
+        }
+    }
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
+});
+
+/******************************** ADMIN SECTION END ********************************/
 
 $app->post('/register', function(Request $request, Response $response)
 {
@@ -50,7 +340,7 @@ $app->post('/register', function(Request $request, Response $response)
         else if($result == USERNAME_EXIST)
             return returnException(true,USERNAME_EXIST,$response);
         else if($result == USER_CREATED){
-            $code = $db->getCodeByEmail($email);
+            $code = $db->getCode();
             if(prepareVerificationMail($name,$email,$code))
                return returnException(false,EMAIL_VERIFICATION_SENT.$email,$response);
             else
@@ -63,15 +353,31 @@ $app->post('/register', function(Request $request, Response $response)
     }
 });
 
-$app->get('/demo/{id}',function(Request $request, Response $response,array $args )
+$app->get('/demo',function(Request $request, Response $response,array $args )
 {
     $db = new DbHandler;
-    $id = $args['id'];
+    $db->setUserId(190);
+    // $users = array();
         $responseG = array();
         $responseG['success'] = true;
         $responseG[ERROR] = false;
-        $responseG[MESSAGE] = "This is demo api call";
-        $responseG['data'] = $db->getAllFriendsId($id);
+        $responseG[MESSAGE] = "Searching Users By Keywords";
+        $responseG['data'] = $db->getHiddenFeeds();
+        $response->write(json_encode($responseG));
+        return $response->withHeader(CT,AJ)
+                ->withStatus(200);
+});
+
+$app->get('/demo1',function(Request $request, Response $response,array $args )
+{
+    $db = new DbHandler;
+    $db->setUserId(190);
+    // $users = array();
+        $responseG = array();
+        $responseG['success'] = true;
+        $responseG[ERROR] = false;
+        $responseG[MESSAGE] = "Searching Users By Keywords";
+        $responseG['data'] = $db->test();
         $response->write(json_encode($responseG));
         return $response->withHeader(CT,AJ)
                 ->withStatus(200);
@@ -120,7 +426,7 @@ $app->post('/login', function(Request $request, Response $response)
     }
 });
 
-$app->post('/forgotPassword', function(Request $request, Response $response)
+$app->post('/password/forgot', function(Request $request, Response $response)
 {
     if(!checkEmptyParameter(array('email'),$request,$response))
     {
@@ -131,7 +437,8 @@ $app->post('/forgotPassword', function(Request $request, Response $response)
         if($result == CODE_UPDATED)
         {
             $name = $db->getNameByEmail($email);
-            $code = decrypt($db->getCodeByEmail($email));
+            $codeForForgotPassword = 2;
+            $code = decrypt($db->getCode($codeForForgotPassword));
             if(prepareForgotPasswordMail($name,$email,$code))
                 return returnException(false,EMAIL_OTP_SENT,$response);
             else
@@ -150,7 +457,7 @@ $app->post('/forgotPassword', function(Request $request, Response $response)
     }
 });
 
-$app->post('/resetPassword', function(Request $request, Response $response)
+$app->post('/password/reset', function(Request $request, Response $response)
 {
     $result = array();
     if(!checkEmptyParameter(array('email','otp','newPassword'),$request,$response))
@@ -177,13 +484,13 @@ $app->post('/resetPassword', function(Request $request, Response $response)
         else if($result ==PASSWORD_RESET_FAILED)
             return returnException(true,SWW,$response);
         else if($result ==CODE_WRONG)
-            return returnException(true,INVAILID_OTP,$response);
+            return returnException(true,INVALID_OTP,$response);
         else
             return returnException(true,SWW,$response);
     }
 });
 
-$app->post('/updatePassword',function(Request $request, Response $response)
+$app->post('/password/update',function(Request $request, Response $response)
 {
     $db = new DbHandler;
     if (validateToken($db,$request,$response)) 
@@ -210,7 +517,8 @@ $app->post('/updatePassword',function(Request $request, Response $response)
                     return returnException(true,SWW,$response);
             }
     }
-    return returnException(true,UNAUTH_ACCESS,$response);
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
 });
 
 $app->post('/sendEmailVerfication',function(Request $request, Response $response)
@@ -224,8 +532,9 @@ $app->post('/sendEmailVerfication',function(Request $request, Response $response
         $result = $db->sendEmailVerificationAgain($email);
         if($result ==SEND_CODE)
         {
+            $db->setUserId($db->getUserIdByEmail($email));
             $name = $db->getNameByEmail($email);
-            $code = $db->getCodeByEmail($email);
+            $code = $db->getCode(1);
             $process = prepareVerificationMail($name,$email,$code);
             if($process)
                 return returnException(false,EMAIL_VERIFICATION_SENT.$email,$response);
@@ -286,7 +595,8 @@ $app->get('/users', function(Request $request, Response $response)
             else
                 return returnException(true,USER_NOT_FOUND,$response);
     }
-    return returnException(true,UNAUTH_ACCESS,$response);
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
 });
 
 $app->get('/user', function(Request $request, Response $response, array $args)
@@ -312,7 +622,8 @@ $app->get('/user', function(Request $request, Response $response, array $args)
         else
             return returnException(true,USERNAME_NOT_EXIST,$response);
     }
-    return returnException(true,UNAUTH_ACCESS,$response);
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
 });
 
 $app->get('/user/{username}', function(Request $request, Response $response, array $args)
@@ -354,7 +665,35 @@ $app->get('/user/{username}', function(Request $request, Response $response, arr
         else
             return returnException(true,USERNAME_NOT_EXIST,$response);
     }
-    return returnException(true,UNAUTH_ACCESS,$response);
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
+});
+
+/************************************PENDING PENDIN PEDING PENDING****************************************************/
+
+$app->get('/search/user/{keyword}', function(Request $request, Response $response, array $args)
+{
+    $db = new DbHandler;
+    if (validateToken($db,$request,$response)) 
+    {
+            $keyword = $args['keyword'];
+            $tokenId = $db->getUserId();
+            $users = $db->getUsers($tokenId);
+            if (!empty($users)) 
+            {
+                $responseUserDetails = array();
+                $responseUserDetails[ERROR] = false;
+                $responseUserDetails[MESSAGE] = USERS_LIST_FOUND;
+                $responseUserDetails[USERS] = $users;
+                $response->write(json_encode($responseUserDetails));
+                return $response->withHeader(CT, AJ)
+                         ->withStatus(200);
+            }
+            else
+                return returnException(true,USER_NOT_FOUND,$response);
+    }
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
 });
 
 $app->post('/user/update', function(Request $request, Response $response)
@@ -393,7 +732,7 @@ $app->post('/user/update', function(Request $request, Response $response)
                 return;
             }
             if (empty($requestParameters['image']))
-                $image = $db->getImageById($userId);
+                $image = $db->getImageByIdWithoutFullLink($userId);
             else
                 $image = $requestParameters['image'];
             $result = $db->updateUser($userId,$name,$username,$bio,$image);
@@ -402,8 +741,9 @@ $app->post('/user/update', function(Request $request, Response $response)
             else if ($result==USER_UPDATE_FAILED)
                 return returnException(true,SWW,$response);
         }
-    } 
-    return returnException(true,UNAUTH_ACCESS,$response);
+    }
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
 });
 
 $app->post('/user/block', function(Request $request, Response $response)
@@ -431,7 +771,7 @@ $app->post('/user/block', function(Request $request, Response $response)
                         {
                             if ($db->deleteFriend($tokenId,$userId)) 
                             {
-                                $db->deleteAllNotification($tokenId,$userId);
+                                $db->deleteAllNotification($userId);
                             }
                         }
                         else
@@ -440,10 +780,10 @@ $app->post('/user/block', function(Request $request, Response $response)
                             {
                                 if ($db->cancelFriendRequest($tokenId,$userId)) 
                                 {
-                                    $db->deleteAllNotification($tokenId,$userId);
+                                    $db->deleteAllNotification($userId);
                                 }
                             }
-                            $db->deleteAllNotification($tokenId,$userId);
+                            $db->deleteAllNotification($userId);
                         }
                         return returnException(false,BLOCK_SUCCESS,$response);
                     }
@@ -457,7 +797,8 @@ $app->post('/user/block', function(Request $request, Response $response)
                 return returnException(true,USER_NOT_FOUND,$response);
         }
     }
-    return returnException(true,UNAUTH_ACCESS,$response);
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
 });   
 
 $app->get('/users/block', function(Request $request, Response $response)
@@ -480,7 +821,8 @@ $app->get('/users/block', function(Request $request, Response $response)
             else
                 return returnException(true,USER_NOT_FOUND,$response);
     }
-    return returnException(true,UNAUTH_ACCESS,$response);
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
 });
 
 $app->post('/user/unblock', function(Request $request, Response $response)
@@ -514,7 +856,8 @@ $app->post('/user/unblock', function(Request $request, Response $response)
                 return returnException(true,USER_NOT_FOUND,$response);
         }
     }
-    return returnException(true,UNAUTH_ACCESS,$response);
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
 });  
 
 $app->get('/update/{version}', function(Request $request, Response $response, array $args)
@@ -523,7 +866,7 @@ $app->get('/update/{version}', function(Request $request, Response $response, ar
     $version = (float)$args['version'];
     if ($db->isUpdateAvailable($version))
     {
-        $updateUrl = $db->getUpdateUrl();
+        $updateUrl = $db->getUpdateInfo();
         $responseUpdate = array();
         $responseUpdate[ERROR] = false;
         $responseUpdate[MESSAGE] = UPDATE_FOUND;
@@ -562,10 +905,10 @@ $app->get('/user/{username}/friends', function(Request $request, Response $respo
             else
                 return returnException(true,FRIEND_NOT_FOUND,$response);
         }
-        else
-            return returnException(true,USER_NOT_FOUND,$response);
+        elsereturnException(true,USER_NOT_FOUND,$response);
     }
-    return returnException(true,UNAUTH_ACCESS,$response);
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
 });
 
 $app->get('/user/{username}/images', function(Request $request, Response $response, array $args)     //Change Add User
@@ -597,7 +940,8 @@ $app->get('/user/{username}/images', function(Request $request, Response $respon
         else
             return returnException(true,USER_NOT_FOUND,$response);
     }
-    return returnException(true,UNAUTH_ACCESS,$response);
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
 });
 
 $app->post('/sendFriendRequest',function(Request $request, Response $response)
@@ -614,7 +958,7 @@ $app->post('/sendFriendRequest',function(Request $request, Response $response)
             {
                 if ($db->checkUserById($userId)) 
                 {
-                    if (!$db->isUserBlocked($tokenId,$userId)) 
+                    if (!$db->isUserBlocked($userId)) 
                     {
                         if (!$db->isAlreadyFriend($tokenId,$userId)) 
                         {
@@ -645,7 +989,8 @@ $app->post('/sendFriendRequest',function(Request $request, Response $response)
                 return returnException(true,FRIEND_REQUEST_CANT_SENT_TO_SELF,$response);
         }
     }
-    return returnException(true,UNAUTH_ACCESS,$response);
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
 });
 
 $app->post('/acceptFriendRequest',function(Request $request, Response $response)
@@ -695,7 +1040,8 @@ $app->post('/acceptFriendRequest',function(Request $request, Response $response)
                 return returnException(true,SOCIAL_CODIA,$response);
         }
     }
-    return returnException(true,UNAUTH_ACCESS,$response);
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
 });
 
 $app->post('/cancelFriendRequest',function(Request $request, Response $response)
@@ -738,7 +1084,8 @@ $app->post('/cancelFriendRequest',function(Request $request, Response $response)
                 return returnException(true,SOCIAL_CODIA,$response);
         }
     }
-    return returnException(true,UNAUTH_ACCESS,$response);
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
 });
 
 $app->post('/deleteFriend',function(Request $request, Response $response)
@@ -776,7 +1123,8 @@ $app->post('/deleteFriend',function(Request $request, Response $response)
                 return returnException(true,SOCIAL_CODIA,$response);
         }
     }
-    return returnException(true,UNAUTH_ACCESS,$response);
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
 });
 
 $app->post('/feed/post', function(Request $request, Response $response)          //Added Feed
@@ -818,6 +1166,9 @@ $app->post('/feed/post', function(Request $request, Response $response)         
         }
         else
         {
+            $file = $requestParameters['file'];
+            // $file = $file->getClientMediaType();
+            // print_r($file);
             $content = "";
             if (!empty($requestParameter['content']))
                 $content = $requestParameter['content'];
@@ -833,7 +1184,8 @@ $app->post('/feed/post', function(Request $request, Response $response)         
                 return returnException(true,SWW.$result,$response);
         }
     }
-    return returnException(true,UNAUTH_ACCESS,$response);
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
 });
 
 $app->post('/feed/update', function (Request $request, Response $response)
@@ -886,7 +1238,8 @@ $app->post('/feed/update', function (Request $request, Response $response)
             }
         }
     }
-    return returnException(true,UNAUTH_ACCESS,$response);
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
 });
 
 $app->post('/feed/delete', function(Request $request, Response $response)
@@ -919,7 +1272,81 @@ $app->post('/feed/delete', function(Request $request, Response $response)
                 return returnException(true,FEED_NOT_FOUND,$response);
         }
     }
-    return returnException(true,UNAUTH_ACCESS,$response);
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
+});
+
+$app->post('/feed/hide', function(Request $request, Response $response)
+{
+    $db = new DbHandler;
+    $hideType = 1;
+    if (validateToken($db,$request,$response)) 
+    {
+        if (!checkEmptyParameter(array('feedId'),$request,$response)) 
+        {   
+            $requestParameter = $request->getParsedBody();
+            $feedId = $requestParameter['feedId'];
+            if ($db->isFeedExist($feedId)) 
+            {
+                if (!$db->isFeedAlreadyHidden($hideType,$feedId)) 
+                {
+                    $userId = $db->getUserId();
+                    $result = $db->hideFeed($hideType,$feedId);
+                    if ($result)
+                    {
+                        return returnException(false,FEED_HIDED,$response);
+                    }
+                    else
+                        return returnException(true,FEED_HIDE_FAILED, $response);
+                }
+                return returnException(true,FEED_HIDE_ALREADY,$response);
+            }
+            else
+                return returnException(true,FEED_NOT_FOUND,$response);
+        }
+    }
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
+});
+
+//working here to fetch and return all the feeds which is hidden by a specific user
+$app->get('/feeds/hide', function(Request $request, Response $response)
+{
+    $db = new DbHandler;
+    $hideType = 1;
+    if (validateToken($db,$request,$response)) 
+    {
+            $result = $db->getHiddenFeeds();
+            print_r($result);
+    }
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
+});
+
+$app->post('/feed/unhide', function(Request $request, Response $response)
+{
+    $db = new DbHandler;
+    if (validateToken($db,$request,$response)) 
+    {
+        if (!checkEmptyParameter(array('feedId'),$request,$response)) 
+        {   
+            $requestParameter = $request->getParsedBody();
+            $feedId = $requestParameter['feedId'];
+            $hideType = 1;
+            if ($db->isFeedAlreadyHidden($hideType,$feedId)) 
+            {
+                $result = $db->unhideFeed($hideType,$feedId);
+                if ($result)
+                    return returnException(false,FEED_UNHIDED,$response);
+                else
+                    return returnException(true,FEED_UNHIDE_FAILED, $response);
+            }
+            else
+                return returnException(true,FEED_NOT_HIDED,$response);
+        }
+    }
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
 });
 
 $app->get('/feeds', function(Request $request, Response $response)
@@ -942,7 +1369,8 @@ $app->get('/feeds', function(Request $request, Response $response)
         else
             return returnException(true,FEED_NOT_FOUND,$response);
     }
-    return returnException(true,UNAUTH_ACCESS,$response);
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
 });
 
 $app->get('/feeds/{feedPrivacy}', function(Request $request, Response $response, array $args)
@@ -987,7 +1415,8 @@ $app->get('/feeds/{feedPrivacy}', function(Request $request, Response $response,
         else
             return returnException(true,FEED_PRIVACY_INVALID,$response);
     }
-    return returnException(true,UNAUTH_ACCESS,$response);
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
 });
 
 $app->get('/user/{username}/feeds', function(Request $request, Response $response, array $args)      //Added User
@@ -1019,7 +1448,8 @@ $app->get('/user/{username}/feeds', function(Request $request, Response $respons
         else
             return returnException(true,USER_NOT_FOUND,$response);
     }
-    return returnException(true,UNAUTH_ACCESS,$response);
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
 });
 
 $app->get('/feed/{feedId}', function(Request $request, Response $response,array $args)
@@ -1055,7 +1485,8 @@ $app->get('/feed/{feedId}', function(Request $request, Response $response,array 
         else
             return returnException(true,FEED_NOT_FOUND,$response);
     }
-    return returnException(true,UNAUTH_ACCESS,$response);
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
 });
 
 $app->get('/feed/{feedId}/comments', function (Request $request, Response $response, array $args)
@@ -1089,7 +1520,72 @@ $app->get('/feed/{feedId}/comments', function (Request $request, Response $respo
         else
             return returnException(true,FEED_ID_EMPTY_ERROR,$response);
     }
-    return returnException(true,UNAUTH_ACCESS,$response);
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
+});
+
+$app->post('/account/delete', function (Request $request, Response $response)
+{
+    $db = new DbHandler;
+    if (validateToken($db,$request,$response)) 
+    {
+        if (!checkEmptyParameter(array('otp'),$request,$response)) 
+        {
+            $requestParameter = $request->getParsedBody();
+            $code = $requestParameter['otp'];
+            $codeForDeleteAccount = 3;
+            if ($db->verifyCode($code,$codeForDeleteAccount)) 
+            {
+                if ($db->deleteAccount())
+                    return returnException(false,"Your Account Has Been Deleted",$response);
+                else
+                    return returnException(false,"Failed to delete your Account",$response);
+            }
+            else
+                return returnException(false,INVALID_OTP,$response);
+        }
+    }
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
+});
+
+
+//WARNING WARNING :- user can delete the account with any otp, which they will receive in their mail address.
+
+$app->post('/account/delete/request', function (Request $request, Response $response)
+{
+    $db = new DbHandler;
+    if (validateToken($db,$request,$response)) 
+    {
+        if (!checkEmptyParameter(array('password'),$request,$response)) 
+        {
+            $requestParameter = $request->getParsedBody();
+            $password = $requestParameter['password'];
+            if ($db->verifyPassword($password)) 
+            {
+                $code = rand(100000,999999);
+                $codeForDeleteAccount = 3;
+                if ($db->updateCode($code,$codeForDeleteAccount)) 
+                {
+                    $user = $db->getUserById($db->getUserId());
+                    $name = $user['name'];
+                    $email = $user['email'];
+                    if(prepareDeleteAccountVerificationMail($name,$email,$code))
+                    {
+                        return returnException(false,"OTP sent successfully",$response);
+                    }
+                    else
+                        return returnException(true,"Failed to sent OTP",$response);
+                }
+                else
+                    return returnException(true,"Failed To send OTP",$response);
+            }
+            else
+                return returnException(true,PASSWORD_WRONG,$response);
+        }
+    }
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
 });
 
 $app->post('/comment/post', function(Request $request, Response $response)       //Chnages
@@ -1143,7 +1639,8 @@ $app->post('/comment/post', function(Request $request, Response $response)      
                 return returnException(true,FEED_NOT_FOUND,$response);
         }
     }
-    return returnException(true,UNAUTH_ACCESS,$response);
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
 });
 
 $app->post('/comment/like', function(Request $request, Response $response)
@@ -1190,7 +1687,8 @@ $app->post('/comment/like', function(Request $request, Response $response)
                 return returnException(true,COMMENT_NOT_FOUND,$response);
         }
     }
-    return returnException(true,UNAUTH_ACCESS,$response);
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
 });
 
 $app->post('/comment/unlike', function(Request $request, Response $response)
@@ -1237,7 +1735,8 @@ $app->post('/comment/unlike', function(Request $request, Response $response)
                 return returnException(true,COMMENT_NOT_FOUND,$response);
         }
     }
-    return returnException(true,UNAUTH_ACCESS,$response);
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
 });
 
 $app->post('/comment/delete', function(Request $request, Response $response)
@@ -1245,10 +1744,10 @@ $app->post('/comment/delete', function(Request $request, Response $response)
     $db = new DbHandler;
     if (validateToken($db,$request,$response)) 
     {
-        if (!checkEmptyParameter(array('id'),$request,$response)) 
+        if (!checkEmptyParameter(array('commentId'),$request,$response)) 
         {   
             $requestParameter = $request->getParsedBody();
-            $commentId = $requestParameter['id'];
+            $commentId = $requestParameter['commentId'];
             if ($db->isCommentExist($commentId)) 
             {
                 $userId = $db->getUserId();
@@ -1266,7 +1765,8 @@ $app->post('/comment/delete', function(Request $request, Response $response)
                 return returnException(true,COMMENT_NOT_FOUND,$response);
         }
     }
-    return returnException(true,UNAUTH_ACCESS,$response);
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
 });
 
 $app->post('/feed/like', function(Request $request, Response $response)
@@ -1280,16 +1780,16 @@ $app->post('/feed/like', function(Request $request, Response $response)
             $feedId = $requestParameter['feedId'];
             if ($db->isFeedExist($feedId)) 
             {
-                $userId = $db->getUserId();
-                if (!$db->isFeedLiked($feedId,$userId)) {
-                    $result = $db->likeFeed($feedId,$userId);
+                $tokenId = $db->getUserId();
+                if (!$db->isFeedLiked($feedId,$tokenId)) {
+                    $result = $db->likeFeed($feedId,$tokenId);
                     if ($result== FEED_LIKED) 
                     { 
                         $notificationType = 1;
                         $feedAuthorId = $db->getFeedAuthorIdByFeedId($feedId);
-                        if ($userId!=$feedAuthorId) 
+                        if ($tokenId!=$feedAuthorId) 
                         {
-                            $db->addFeedLikeNotification($userId,$feedId,$notificationType);
+                            $db->addFeedLikeNotification($tokenId,$feedId,$notificationType);
                         }
                         $feed = array();
                         $feed['feedLikes'] = $db->getLikesCountByFeedId($feedId);
@@ -1311,7 +1811,50 @@ $app->post('/feed/like', function(Request $request, Response $response)
                 return returnException(true,FEED_NOT_FOUND,$response);
         }
     }
-    return returnException(true,UNAUTH_ACCESS,$response);
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
+});
+
+$app->get('/feed/like/{feedId}/users', function(Request $request, Response $response,array $args)
+{
+    $db = new DbHandler;
+    if (validateToken($db,$request,$response)) 
+    { 
+        $feedId = $args['feedId'];
+        $feedAuthorId = $db->getFeedAuthorIdByFeedId($feedId);
+        $tokenId = $db->getUserId();
+        if (!empty($feedAuthorId)) 
+        {
+            if (!$db->isUserBlocked($feedAuthorId)) 
+            {
+                if ($db->isFeedExist($feedId)) 
+                {
+                    $users = $db->getUsersWhoLikeTheFeed($feedId);
+                    if (!empty($users))
+                    {
+                            $responseFeedDetails = array();
+                            $responseFeedDetails[ERROR] = false;
+                            $responseFeedDetails[MESSAGE] = USER_FOUND;
+                            $responseFeedDetails['users'] = $users;
+                            $response->write(json_encode($responseFeedDetails));
+                            return $response->withHeader(CT,AJ)
+                                            ->withStatus(200);
+                    }
+                    else
+                        return returnException(true,'No User Likes The Feed', $response);
+                }
+                else
+                    return returnException(true,FEED_NOT_FOUND,$response);
+            }
+                else
+                    return returnException(true,FEED_NOT_FOUND,$response);
+        }
+        else
+            return returnException(true,FEED_ID_EMPTY_ERROR,$response);
+
+    }
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
 });
 
 $app->post('/feed/unlike', function(Request $request, Response $response)
@@ -1353,7 +1896,8 @@ $app->post('/feed/unlike', function(Request $request, Response $response)
                 return returnException(true,FEED_NOT_FOUND,$response);
         }
     }
-    return returnException(true,UNAUTH_ACCESS,$response);
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
 });
 
 $app->post('/feed/report', function(Request $request, Response $response)
@@ -1383,7 +1927,8 @@ $app->post('/feed/report', function(Request $request, Response $response)
                 return returnException(true,FEED_NOT_FOUND,$response);
         }
     }
-    return returnException(true,UNAUTH_ACCESS,$response);
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
 });
 
 $app->get('/notifications', function(Request $request, Response $response, array $args)
@@ -1395,18 +1940,26 @@ $app->get('/notifications', function(Request $request, Response $response, array
         if ($db->checkUserById($tokenId)) 
         {
             $notifications = $db->getNotificationsByUserId($tokenId);
-            $responseNotificationsDetails = array();
-            $responseNotificationsDetails[ERROR] = false;
-            $responseNotificationsDetails[MESSAGE] = NOTIFICATIONS_FOUND;
-            $responseNotificationsDetails['notifications'] = $notifications;
-            $response->write(json_encode($responseNotificationsDetails));
-            return $response->withHeader(CT,AJ)
-                            ->withStatus(200);
+            if (!empty($notifications)) {
+                $responseNotificationsDetails = array();
+                $responseNotificationsDetails[ERROR] = false;
+                $responseNotificationsDetails[MESSAGE] = NOTIFICATIONS_FOUND;
+                $responseNotificationsDetails['notifications'] = $notifications;
+                $response->write(json_encode($responseNotificationsDetails));
+                return $response->withHeader(CT,AJ)
+                                ->withStatus(200);
+                }
+            else
+            {
+                return returnException(true,NOTIFICATIONS_NOT_FOUND,$response);
+            }
+
         }
         else
             return returnException(true,USERNAME_NOT_EXIST,$response);
     }
-    return returnException(true,UNAUTH_ACCESS,$response);
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
 });
 
 $app->get('/notifications/Count', function(Request $request, Response $response, array $args)
@@ -1429,7 +1982,8 @@ $app->get('/notifications/Count', function(Request $request, Response $response,
         else
             return returnException(true,USERNAME_NOT_EXIST,$response);
     }
-    return returnException(true,UNAUTH_ACCESS,$response);
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
 });
 
 $app->get('/notifications/Seened', function(Request $request, Response $response, array $args)
@@ -1449,7 +2003,28 @@ $app->get('/notifications/Seened', function(Request $request, Response $response
         else
             return returnException(true,USERNAME_NOT_EXIST,$response);
     }
-    return returnException(true,UNAUTH_ACCESS,$response);
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
+});
+
+$app->post('/notification/delete', function(Request $request, Response $response)
+{
+    $db = new DbHandler;
+    if(validateToken($db,$request,$response))
+    {
+        $tokenId = $db->getUserId();
+        if (!checkEmptyParameter(array('notificationId'),$request,$response)) 
+        {
+            $requestParameter = $request->getParsedBody();
+            $notificationId = $requestParameter['notificationId'];
+            if ($db->deleteNotificationById($notificationId))
+                return returnException(false,"Notification Deleted",$response);
+            else
+                return returnException(true,"Failed To Delete Notification",$response);
+        }
+    }
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
 });
 
 $app->post('/video/post', function(Request $request, Response $response)
@@ -1495,7 +2070,8 @@ $app->post('/video/post', function(Request $request, Response $response)
         else
             return returnException(true,"Title and Description should not be empty",$response);
     }
-    return returnException(true,UNAUTH_ACCESS,$response);
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
 });
 
 $app->get('/videos', function(Request $request, Response $response)
@@ -1517,7 +2093,8 @@ $app->get('/videos', function(Request $request, Response $response)
         else
             return returnException(true,"Video Not Found",$response);
     }
-    return returnException(true,UNAUTH_ACCESS,$response);
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
 });
 
 $app->get('/video/{videoId}', function(Request $request, Response $response, array $args)
@@ -1550,7 +2127,8 @@ $app->get('/video/{videoId}', function(Request $request, Response $response, arr
         else
             return returnException(true,"Video Not Found",$response);
     }
-    return returnException(true,UNAUTH_ACCESS,$response);
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
 });
 
 $app->post('/requests/post', function(Request $request, Response $response)
@@ -1597,7 +2175,8 @@ $app->post('/requests/post', function(Request $request, Response $response)
                 return returnException(true,"Your Verification Request Is In Pending",$response);
         }
     } 
-    return returnException(true,UNAUTH_ACCESS,$response);
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
 });
 
 $app->post('/contacts/post', function(Request $request, Response $response)
@@ -1624,7 +2203,8 @@ $app->post('/contacts/post', function(Request $request, Response $response)
                 return returnException(true,SUBMIT_FAILED, $response);
         }
     }
-    return returnException(true,UNAUTH_ACCESS,$response);
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
 });
 
 $app->post('/uploadProfileImage', function(Request $request, Response $response)
@@ -1648,7 +2228,8 @@ $app->post('/uploadProfileImage', function(Request $request, Response $response)
         else
             return returnException(true,IMAGE_NOT_SELECTED,$response);
     }
-    return returnException(true,UNAUTH_ACCESS,$response);
+    else
+        return returnException(true,UNAUTH_ACCESS,$response);
 });
 
 function checkEmptyParameter($requiredParameter,$request,$response)
@@ -1709,6 +2290,101 @@ function prepareForgotPasswordMail($name,$email,$code)
                     <tr>
                         <td bgcolor="#ffffff" align="left" style="padding: 20px 30px 40px 30px; color: #666666; font-family: 'Lato', Helvetica, Arial, sans-serif; font-size: 18px; font-weight: 400; line-height: 25px;">
                             <p style="margin: 0;">You told us you forgot your password, If you really did, Use this OTP (One Time Password) to choose a new one.</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td bgcolor="#ffffff" align="left">
+                            <table width="100%" border="0" cellspacing="0" cellpadding="0">
+                                <tr>
+                                    <td bgcolor="#ffffff" align="center" style="padding: 20px 30px 60px 30px;">
+                                        <table border="0" cellspacing="0" cellpadding="0">
+                                            <tr>
+                                                <td align="center" style="border-radius: 3px;" bgcolor="#FFA73B"><b style="font-size: 20px; font-family: Helvetica, Arial, sans-serif; color: #ffffff; text-decoration: none; color: #ffffff; text-decoration: none; padding: 15px 25px; border-radius: 2px; border: 1px solid #FFA73B; display: inline-block;">$code</b></td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr> <!-- COPY -->
+                    <tr>
+                        <td bgcolor="#ffffff" align="left" style="padding: 0px 30px 0px 30px; color: #666666; font-family: 'Lato', Helvetica, Arial, sans-serif; font-size: 18px; font-weight: 400; line-height: 25px;">
+                            <p style="margin: 0;">For security, this request was recieved from ip address $ipAddress. <br> If you didn't make this request, you can safely ignore this email :)</p>
+                        </td>
+                    </tr> <!-- COPY -->
+                    <tr>
+                        <td bgcolor="#ffffff" align="left" style="padding: 0px 30px 20px 30px; color: #666666; font-family: 'Lato', Helvetica, Arial, sans-serif; font-size: 15px; font-weight: 400; line-height: 25px;">
+                           <br> <p style="margin: 0;">If you have any questions, just reply to this email—we're always happy to help out.</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td bgcolor="#ffffff" align="left" style="padding: 0px 30px 40px 30px; border-radius: 0px 0px 4px 4px; color: #666666; font-family: 'Lato', Helvetica, Arial, sans-serif; font-size: 18px; font-weight: 400; line-height: 25px;">
+                            <p style="margin: 0;">$websiteOwnerName,<br>$websiteName Team</p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+        <tr>
+            <td bgcolor="#f4f4f4" align="center" style="padding: 30px 10px 0px 10px;">
+                <table border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 600px;">
+                    <tr>
+                        <td bgcolor="#FFECD1" align="center" style="padding: 30px 30px 30px 30px; border-radius: 4px 4px 4px 4px; color: #666666; font-family: 'Lato', Helvetica, Arial, sans-serif; font-size: 18px; font-weight: 400; line-height: 25px;">
+                            <h2 style="font-size: 20px; font-weight: 400; color: #111111; margin: 0;">Need more help?</h2>
+                            <p style="margin: 0;"><a href="$websiteDomain" target="_blank" style="color: #FFA73B;">We&rsquo;re here to help you out</a></p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+    </body>
+    HERE;;
+
+    if(sendMail($name,$email,$mailSubject,$mailBody))
+        return true;
+    return false;
+}
+
+function prepareDeleteAccountVerificationMail($name,$email,$code)
+{
+    $websiteDomain = WEBSITE_DOMAIN;
+    $websiteName = WEBSITE_NAME;
+    $websiteEmail = WEBSITE_EMAIL;
+    $websiteOwnerName = WEBSITE_OWNER_NAME;
+    $ipAddress = "(".$_SERVER['REMOTE_ADDR'].")";
+    $mailSubject = "$websiteName Deletion Confirmation";
+    $mailBody= <<<HERE
+    <body style="background-color: #f4f4f4; margin: 0 !important; padding: 0 !important;">
+    <!-- HIDDEN PREHEADER TEXT -->
+    <table border="0" cellpadding="0" cellspacing="0" width="100%">
+        <!-- LOGO -->
+        <tr>
+            <td bgcolor="#FFA73B" align="center">
+                <table border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 600px;">
+                    <tr>
+                        <td align="center" valign="top" style="padding: 40px 10px 40px 10px;"> </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+        <tr>
+            <td bgcolor="#FFA73B" align="center" style="padding: 0px 10px 0px 10px;">
+                <table border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 600px;">
+                    <tr>
+                        <td bgcolor="#ffffff" align="center" valign="top" style="padding: 40px 20px 20px 20px; border-radius: 4px 4px 0px 0px; color: #111111; font-family: 'Lato', Helvetica, Arial, sans-serif; font-size: 48px; font-weight: 400; letter-spacing: 4px; line-height: 48px;">
+                            <h1 style="font-size: 48px; font-weight: 400; margin: 2;">Welcome!</h1><img src=" https://img.icons8.com/cute-clipart/64/000000/delete-forever.png" width="125" height="120" style="display: block; border: 0px;" />
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+        <tr>
+            <td bgcolor="#f4f4f4" align="center" style="padding: 0px 10px 0px 10px;">
+                <table border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 600px;">
+                    <tr>
+                        <td bgcolor="#ffffff" align="left" style="padding: 20px 30px 40px 30px; color: #666666; font-family: 'Lato', Helvetica, Arial, sans-serif; font-size: 18px; font-weight: 400; line-height: 25px;">
+                            <p style="margin: 0;">You told us to permanetly delete your $websiteName account., If you really did, Use this OTP (One Time Password) to permanently delete your account.</p>
                         </td>
                     </tr>
                     <tr>
@@ -1958,12 +2634,17 @@ function sendMail($name,$email,$mailSubject,$mailBody)
     $mail = new PHPMailer;
     $mail->SMTPDebug = 0;
     $mail->isSMTP();
-    // $mail->Host="smtp.gmail.com";
-    // $mail->Port=587;
-    $mail->Host="free.mboxhosting.com";
-    $mail->Port=25;
-    $mail->SMPTSecure="tls";
+    $mail->Host=SMTP_HOST;
+    $mail->Port=SMTP_PORT;
+    $mail->SMPTSecure=SMTP_SECURE;
     $mail->SMTPAuth=true;
+    $mail->SMTPOptions = array(
+    // 'ssl' => array(
+    //     'verify_peer' => false,
+    //     'verify_peer_name' => false,
+    //     'allow_self_signed' => true
+    // )
+);
     $mail->Username = $websiteEmail;
     $mail->Password = $websiteEmailPassword;
     $mail->addAddress($email,$name);
@@ -1994,14 +2675,13 @@ function decrypt($data)
     $email = openssl_decrypt($email,"AES-128-ECB",null);
     return $email; 
 }
-
 function returnException($error,$message,$response)
 {
     $errorDetails = array();
-    $errorDetails[ERROR] = $error;
-    $errorDetails[MESSAGE] = $message;
+    $errorDetails['error'] = $error;
+    $errorDetails['message'] = $message;
     $response->write(json_encode($errorDetails));
-    return $response->withHeader(CT,AJ)
+    return $response->withHeader('Content-type','Application/json')
                     ->withStatus(200);
 }
 
@@ -2028,6 +2708,18 @@ function getToken($userId)
     return $token;
 }
 
+function getAdminToken($userId)
+{
+    $key = JWT_ADMIN_SECRET_KEY;
+    $payload = array(
+        "iss" => "http://cpanel.famblah.cf",
+        "iat" => time(),
+        "user_id" => $userId
+    );
+    $token =JWT::encode($payload,$key);
+    return $token;
+}
+
 function validateToken($db,$request,$response)
 {
     $error = false;
@@ -2036,6 +2728,32 @@ function validateToken($db,$request,$response)
     {
         $token = $header['HTTP_TOKEN'][0];
         $result = $db->validateToken($token);
+        if (!$result == JWT_TOKEN_FINE)
+            $error = true;
+        else if($result == JWT_TOKEN_ERROR || $result==JWT_USER_NOT_FOUND)
+        {
+            $error = true;
+        }
+    }
+
+    else
+    {
+        $error = true;
+    }
+    if ($error)
+        return false;
+    else
+        return true;
+}
+
+function validateAdminToken($db,$request,$response)
+{
+    $error = false;
+    $header =$request->getHeaders();
+    if (!empty($header['HTTP_TOKEN'][0])) 
+    {
+        $token = $header['HTTP_TOKEN'][0];
+        $result = $db->validateAdminToken($token);
         if (!$result == JWT_TOKEN_FINE)
             $error = true;
         else if($result == JWT_TOKEN_ERROR || $result==JWT_USER_NOT_FOUND)

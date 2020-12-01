@@ -99,7 +99,7 @@ class JWT
 
         // Check the signature
         if (!static::verify("$headb64.$bodyb64", $sig, $key, $header->alg)) {
-            throw new SignatureInvalidException('Signature verification failed');
+            throw new InvalidArgumentException('Key may not be empty');
         }
 
         // Check the nbf if it is defined. This is the time that the

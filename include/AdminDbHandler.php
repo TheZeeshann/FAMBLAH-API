@@ -1,6 +1,7 @@
 <?php
 
 require_once dirname(__FILE__).'/JWT.php';
+
     $JWT = new JWT;
 
 
@@ -1539,10 +1540,8 @@ class AdminDbHandler
 
     function getUsers($id)
     {
-        $url = "SELECT id,name,username,email,image,verified FROM users WHERE id !=? AND status != ?";
+        $url = "SELECT id,name,username,email,image,verified FROM users";
         $stmt = $this->con->prepare($url);
-        $status = "0";
-        $stmt->bind_param("ss",$id,$status);
         $stmt->execute();
         $stmt->bind_result($id,$name,$username,$email,$image,$verified);
         $users = array();
@@ -1562,6 +1561,32 @@ class AdminDbHandler
         }
         return $users;
     }
+
+    // function getUsers($id)
+    // {
+    //     $url = "SELECT id,name,username,email,image,verified FROM users WHERE id !=? AND verified != ?";
+    //     $stmt = $this->con->prepare($url);
+    //     $status = "0";
+    //     $stmt->bind_param("ss",$id,$status);
+    //     $stmt->execute();
+    //     $stmt->bind_result($id,$name,$username,$email,$image,$verified);
+    //     $users = array();
+    //     while ($stmt->fetch()) {
+    //         $user = array();
+    //         $user['id'] = $id;
+    //         $user['name'] = $name;
+    //         $user['username'] = $username;
+    //         $user['email'] = $email;
+    //         if (empty($image)) 
+    //         {
+    //             $image = DEFAULT_USER_IMAGE;
+    //         }
+    //         $user['image'] = $image;
+    //         $user['verified'] = $verified;
+    //         array_push($users, $user);
+    //     }
+    //     return $users;
+    // }
 
     function checkUserById($id)
     {
@@ -1669,11 +1694,11 @@ class AdminDbHandler
         return false;
     }
 
-    function validateToken($token)
+    function validateAdminToken($token)
     {
         try 
         {
-            $key = JWT_SECRET_KEY;
+            $key = JWT_ADMIN_SECRET_KEY;
             $payload = JWT::decode($token,$key,['HS256']);
             $id = $payload->user_id;
             if ($this->checkUserById($id)) 

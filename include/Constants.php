@@ -3,23 +3,31 @@
 ///////////////////////////////////////////////////// CHANGED INFORMATION /////////////////////////////////////////////////////
 
 //Database Connection
-define('DB_NAME','famblah');   //your database username
+define('DB_NAME','famblah_db');   //your database username
 define('DB_USER', 'root');          //your database name
 define('DB_PASS', '');              //your database password
 define('DB_HOST', 'localhost');     //your database host name
 
 //Website Information
-define('WEBSITE_DOMAIN', 'http://111.111.111.111/SocialApiFriendsSystemVideoThumbs/public/');               //your domain name
+define('WEBSITE_DOMAIN', 'http://111.111.111.111/SocialApiFriendsSystemVideoThumbsCodes/public/');            //your domain name
+// define('WEBSITE_DOMAIN', 'http://10.0.2.2/SocialApiFriendsSystemVideoThumbs/public/');               //your domain name
 // define('WEBSITE_DOMAIN', 'http://socialcodia.net/SocialApiFriendsSystemVideoThumb/public/');               //your domain name
-define('WEBSITE_EMAIL', 'socialcodia@gmail.com');                    //your email address
+define('WEBSITE_EMAIL', 'info@socialcodia.com');                    //your email address
 define('WEBSITE_EMAIL_PASSWORD', 'PASSWORD');                        //your email password
 define('WEBSITE_EMAIL_FROM', 'Social Codia');                        // your website name here
+define('SMTP_HOST', 'smtp.gmail.com');
+define('SMTP_PORT', '587');
+define('SMTP_SECURE', 'tls');
+
+
+
 define('WEBSITE_NAME', 'FAMBLAH');                              //your website name here
 define('WEBSITE_OWNER_NAME', 'Umair Farooqui');                      //your name, or anyones name, we will send this name with email verification mail.
 
 define('DEFAULT_USER_IMAGE', 'uploads/api/user.png');
 
 define('JWT_SECRET_KEY', 'SocialCodia');  							//your jwt secret key, Please use a very dificult secret key, which no one can guess it.
+define('JWT_ADMIN_SECRET_KEY', 'SocialCodiaAdmin');  							//your jwt secret key, Please use a very dificult secret key, which no one can guess it.
 
 ///////////////////////////////////////////// END CHANGE INFORMATION /////////////////////////////////////////////////////
 
@@ -30,11 +38,11 @@ define('JWT_SECRET_KEY', 'SocialCodia');  							//your jwt secret key, Please u
 define('DEFAULT_BIO', "This user is lazy. So they didn't written any bio.");
 
 define('USER_CREATION_FAILED', "Failed to create an account");
-define('USER_CREATED', 102);
+define('USER_CREATED', "Account Created");
 define('USER_FOUND', 'User Found');
 
-define('VERIFICATION_EMAIL_SENT', 104);
-define('VERIFICATION_EMAIL_SENT_FAILED', 105);
+define('VERIFICATION_EMAIL_SENT', "An Email Verification Link Has Been Sent To Your Email Address");
+define('VERIFICATION_EMAIL_SENT_FAILED', "Failed to send email verification link");
 define('USERNAME_EXIST', "Username not available"); 		//change code
 define('USERNAME_NOT_EXIST', "Username Not Exist");
 
@@ -60,9 +68,9 @@ define('EMAIL_OTP_SEND_FAILED', 'Failed To Send OTP Email');
 
 define('PASSWORD_CHANGED',"Password Has Been Changed");
 define('PASSWORD_UPDATED',"Password Has Been Updated");
-define('PASSWORD_CHANGE_FAILED', 207);
+define('PASSWORD_CHANGE_FAILED', "Failed to change the password");
 define('PASSWORD_WRONG', "Wrong Password");
-define('PASSWORD_SAME', 209);
+define('PASSWORD_SAME', "You can't use your current password as new password");
 
 define('INVAILID_USER', "INVALID USER");
 define('CODE_UPDATED', 302);
@@ -90,14 +98,20 @@ define('FEED_UNLIKED','Feed Unliked');
 define('FEED_UNLIKE_FAILED', 'Failed To Unlike Feed');
 define('FEED_UNLIKE_ALREADY', 'Feed Already Unliked');
 
-define('FEED_COMMENT_ADDED', 409);
-define('FEED_COMMENT_ADD_FAILED', 501);
-define('FEED_COMMENT_DELETED', 502);
-define('FEED_COMMENT_DELETE_FAILED', 503);
+define('FEED_COMMENT_ADDED', "Comment has been posted");
+define('FEED_COMMENT_ADD_FAILED', "Failed to post your comment");
+define('FEED_COMMENT_DELETED', "Comment Deleted");
+define('FEED_COMMENT_DELETE_FAILED', "Failed to Delete the Comment");
 define('FEED_DELETED', "Feed Deleted");
+define('FEED_HIDED', "Feed Hided");
+define('FEED_HIDE_FAILED', "Failed to Hide feed");
+define('FEED_HIDE_ALREADY', "You already hide this feed");
+define('FEED_UNHIDED', "Feed UnHided");
+define('FEED_UNHIDE_FAILED', "Failed to UnHide feed");
+define('FEED_NOT_HIDED', "You didn't hide this feed");
 define('FEED_DELETE_FAILED', "Failed To Delete Feed");
 define('FEED_DELETE_WARNING', "WARNING..! STOP..! You can delete only your own Feeds");
-define('FEED_UPDATED', "Oops...! Failed To Update Your Feed");
+define('FEED_UPDATED', "Feed Updated");
 define('FEED_UPDATE_FAILED', "Oops...! Failed To Update Your Feed");
 define('FEED_UPDATE_EMPTY', "Can't Update Empty Feed");
 define('FEED_NOT_FOUND', 'Feed Not Found');
@@ -148,6 +162,7 @@ define('FRIENDSHIP_DELETED', 'Friendship Deleted');
 define('NOTIFICATION_SEEN', '"Notifications Seen"');
 define('NOTIFICATION_SEEN_FAILED', '"Notifications Seened Failed"');
 define('NOTIFICATIONS_FOUND', 'Notification Found');
+define('NOTIFICATIONS_NOT_FOUND', 'No Notification');
 define('NOTIFICATIONS_COUNT_FOUND', 'Notifications Count Found');
 
 define('NAME_GRETER', 'Name Should Not Be Greater Than 30 Charater');
@@ -227,4 +242,5 @@ define('JWT_USER_NOT_FOUND', 404);
 
 
 ///////////////////////////////////////////////////// END DON'T TOUCH THIS /////////////////////////////////////////////////////
+
 
